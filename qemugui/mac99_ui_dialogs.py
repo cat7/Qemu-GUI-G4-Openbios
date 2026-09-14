@@ -103,9 +103,6 @@ class CreateDiskDialog(simpledialog.Dialog):
         super().__init__(parent, "New hard disk")
 
     def body(self, master):
-        from . import mac99_theme
-        mac99_theme.apply(self)
-        master.configure(background=mac99_theme.BG)
         r = 0
         ttk.Label(master, text="Name:").grid(row=r, column=0, sticky="w", padx=4, pady=3)
         self.name_var = tk.StringVar(value="hard disk")

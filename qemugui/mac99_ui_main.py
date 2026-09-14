@@ -12,7 +12,6 @@ from tkinter import ttk, messagebox
 
 from . import mac99_command as command
 from . import mac99_model as model
-from . import mac99_theme
 from . import paths
 from .mac99_model import Machine, Library
 from .paths import Settings
@@ -82,7 +81,6 @@ def start_machine(m: Machine, machine_dir: Path) -> RunningMachine:
 class MainWindow(tk.Tk):
     def __init__(self, settings: Settings, settings_path: Path | None = None):
         super().__init__()
-        mac99_theme.apply(self)
         self.settings = settings
         self.settings_path = settings_path or paths.settings_path()
         self.library = Library()

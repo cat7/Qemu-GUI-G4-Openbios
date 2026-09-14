@@ -17,7 +17,6 @@ from tkinter import ttk, filedialog, messagebox
 
 from . import paths
 from . import mac99_model as model
-from . import mac99_theme
 from .mac99_model import Machine, AtaDrive, Gpu, Network, PromEnv
 from .mac99_ui_dialogs import show_validation
 
@@ -114,7 +113,6 @@ class MachineEditor(tk.Toplevel):
     def __init__(self, parent, machine: Machine, library: model.Library, qemu_dir: str, on_save,
                 is_new: bool = False):
         super().__init__(parent)
-        mac99_theme.apply(self)
         self.machine = machine.copy()
         self.old_name = machine.name
         self.is_new = is_new
