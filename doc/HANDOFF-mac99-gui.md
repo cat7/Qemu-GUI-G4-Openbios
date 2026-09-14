@@ -26,7 +26,7 @@ functional by the build session, wired here as `-display none -vnc <spec>`
 and unit-tested), the universal (arm64+x86_64) `.app` built with
 PyInstaller and copied into the distribution folder, two ready Machines/
 records (Mac OS 9.2, Mac OS X 10.4 -- both with the ATI ROM attached, no
-disk), Readme-ppc-mac99.txt written, and the one authorized smoke start
+disk), Readme-ppc-mac99-openbios.txt written, and the one authorized smoke start
 (disk-less, `-display none`, QMP `query-status`/`quit`) run twice against
 `build-smp/qemu-system-ppc` (once pre-fix reproducing the nvram bug, once
 post-fix confirming it).
@@ -109,7 +109,7 @@ session (not this one) owns building qemu-system-ppc itself (both arches),
 Libs_arm64/, Libs_x86_64/, pc-bios/, the ATI Rage 128 Pro ROM copy, and the
 final zip in that target folder. This session's job is the GUI code, its
 tests, the .app bundle (PyInstaller), the Machines/ records, and
-Readme-ppc-mac99.txt -- written with distinct filenames so nothing collides
+Readme-ppc-mac99-openbios.txt -- written with distinct filenames so nothing collides
 with that other session's output.
 
 ## Git state -- READ CAREFULLY, there is an open discrepancy
@@ -329,7 +329,7 @@ working tree can still collide.
 - Had not written or reviewed any GUI code of its own.
 - Had not run any tests.
 - Had not touched PyInstaller/the .app bundle, Machines/ records, or
-  Readme-ppc-mac99.txt.
+  Readme-ppc-mac99-openbios.txt.
 
 ## Exact next action on resume
 
@@ -350,7 +350,7 @@ working tree can still collide.
    this session.
 4. Continue with: PyInstaller app bundle, Machines/ records (empty drive
    paths, two profiles: Mac OS 9.2 at -smp 1/-m 512, Mac OS X 10.4 at up to
-   -smp 4/-m 1024), Readme-ppc-mac99.txt, tests all passing headless, one
+   -smp 4/-m 1024), Readme-ppc-mac99-openbios.txt, tests all passing headless, one
    disk-less `-display none` + QMP smoke start using
    `/Users/hsp/src/claude-code/qemu-ppc-smp/build-smp/qemu-system-ppc`
    directly (not the not-yet-built distribution binary), coordinate with
