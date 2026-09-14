@@ -78,7 +78,8 @@ applied on this branch (commits `10de8c7`, `6b7b4d7`, `54cff4d`):
   Reset NVRAM dialog text were corrected to say this accurately; see also
   `doc/screenshot-mac99-main.png` for the finished look.
 - A non-white `clam` ttk theme (`qemugui/mac99_theme.py`) applied to the
-  main window and the editor/dialogs.
+  main window and the editor/dialogs. REVERTED, see the addendum below --
+  it was the wrong fix for "too white".
 - PyInstaller SDK-stamp mismatch (x86_64 slice `LC_VERSION_MIN_MACOSX`
   sdk 15.5, arm64 slice `LC_BUILD_VERSION` sdk 26.2, confirmed via
   `otool -arch <arch> -l`) -- not present in the G3 app built earlier on
@@ -94,6 +95,56 @@ applied on this branch (commits `10de8c7`, `6b7b4d7`, `54cff4d`):
   `last-run.log` -- the user has already used this app for real. Left
   completely untouched throughout; flagging so nobody mistakes it for
   test debris and deletes it.
+
+## Addendum: theme reverted (2026-09-14, evening)
+
+Root cause of "too white": never was the theme. `qemugui/mac99_theme.py`
+(`clam`, added in the review round above) was itself the bug the user then
+saw and rejected -- Motif-style left-aligned bevelled tabs, sunken bevelled
+frames, X-style checkboxes, a `readonly` Combobox rendering its selected
+value as unreadable inverse-highlight text, non-native Save/Cancel.
+
+The theme rule now: **native aqua, identical to the G3 GUI; never force a
+theme.** The G3 GUI's grey comes from aqua's own default window background,
+applied by doing nothing -- no `ttk.Style().theme_use(...)` call anywhere,
+on either GUI. Fixed by deleting `qemugui/mac99_theme.py` outright and
+removing its three call sites (`mac99_ui_main.MainWindow.__init__`,
+`mac99_ui_machine.MachineEditor.__init__`,
+`mac99_ui_dialogs.CreateDiskDialog.body`). No other widget-level fix was
+needed: the mac99 editor and main window already used the same ttk widget
+classes, layout helpers and paddings as the G3 GUI (`ui_main.py`/
+`ui_machine.py`) -- the clam theme call was the only divergence.
+
+158 tests still pass headless after the removal. Screenshots taken with a
+scratch install + `screencapture -x -R` (same method as `tools/
+screenshots.py`, driving `MainWindow`/`MachineEditor` directly, selecting a
+tab, then capturing): `doc/screenshot-mac99-display.png`,
+`doc/screenshot-mac99-advanced.png`, `doc/screenshot-g3-advanced.png` --
+same aqua theme, same centred segmented tab bar, same widget rendering on
+both GUIs now confirmed by eye.
+
+One capture gotcha worth keeping for next time: switching a `ttk.Notebook`
+tab programmatically right before a `screencapture` can leave some
+freshly-shown plain `ttk.Label` text unpainted (a real Tk/Aqua redraw bug,
+not an app bug -- interactive widgets and headings placed earlier were
+unaffected, and a human driving the same tab by hand sees the labels fine).
+A trivial resize nudge (grow the window by 1px, then back) right before
+capturing forces the repaint reliably.
+
+Also: an early attempt at this used `screencapture -x -R` after withdrawing
+the main window before opening the editor as its child -- this broke the
+Toplevel's placement and the capture landed on unrelated real desktop
+content instead of the app window. Fix was to leave the main window shown
+(as `tools/screenshots.py` already does) and only capture the editor.
+
+Rebuilt `Qemu-system-ppc Mac99 openbios GUI.app` with
+`/Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13 -m
+PyInstaller --noconfirm Mac99GUI.spec` (universal2, confirmed
+`x86_64 arm64` via `lipo -info`), replaced the one in
+`/Users/hsp/src/_ppc_g4_mac99_openbios_for_emaculation` (old bundle removed
+first, then the new one copied in). Nothing else in that folder was
+touched -- `Machines/` (including the real "Tiger" machine) and every other
+top-level file kept their prior mtimes; no zip was made.
 
 ---
 ## LOG (first session, pre-resume -- historical, corrected by the STATE OF PLAY above)
