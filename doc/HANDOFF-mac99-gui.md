@@ -45,6 +45,56 @@ opposed to `-machine none`, which the build session verified) has been
 end-to-end verified -- the build session's own resume notes flag this as
 still open on their side.
 
+## Addendum: user review round (2026-09-14, same afternoon)
+
+The user reviewed the shipped app and asked for a batch of changes, all
+applied on this branch (commits `10de8c7`, `6b7b4d7`, `54cff4d`):
+
+- Empty slate: no pre-made Machines records ship any more; New machine asks
+  for a name only (no system-type chooser -- there is no governor on this
+  machine). `mac99_systems.py` is gone; `qemugui/mac99_model.py` no longer
+  has a `system` field at all.
+- Firmware override removed: it only ever emitted `-bios <path>`, an
+  advanced escape hatch to run different OpenBIOS/firmware than
+  `-L ./pc-bios` supplies -- nothing on this machine needs it, and the
+  distribution's own pc-bios/ is fixed, so it was removed rather than kept
+  unused.
+- USB storage removed from the editor (kept, tested, at the record/command
+  layer only) -- candidate, not verified against any guest.
+- Two Advanced-tab checkboxes renamed with INVERTED polarity from the
+  field they write ("Boot into Open Firmware" == NOT auto-boot?; "Do not
+  load vga driver" == NOT vga-ndrv?), and the second now follows the GPU
+  checkbox as a starting point.
+- Found and documented a real, load-bearing QEMU behavior while answering
+  the Reset-NVRAM question: `hw/ppc/mac_newworld.c:561` calls
+  `pmac_format_nvram_partition()` UNCONDITIONALLY on every machine start,
+  rebuilding the entire NVRAM (both the OpenBIOS variables and the OS X
+  half) from that invocation's `-prom-env` flags alone
+  (`hw/nvram/chrp_nvram.c:48-86`, itself an unconditional rebuild, no check
+  against existing content). So this GUI's own Advanced-tab fields always
+  win at Start, and NVRAM only carries anything across a warm Restart
+  performed *inside* one continuous QEMU process -- never across quitting
+  and starting again. `qemugui/mac99_model.py`'s module docstring and the
+  Reset NVRAM dialog text were corrected to say this accurately; see also
+  `doc/screenshot-mac99-main.png` for the finished look.
+- A non-white `clam` ttk theme (`qemugui/mac99_theme.py`) applied to the
+  main window and the editor/dialogs.
+- PyInstaller SDK-stamp mismatch (x86_64 slice `LC_VERSION_MIN_MACOSX`
+  sdk 15.5, arm64 slice `LC_BUILD_VERSION` sdk 26.2, confirmed via
+  `otool -arch <arch> -l`) -- not present in the G3 app built earlier on
+  this same machine; traced to this machine's current Xcode SDK (26.2)
+  being newer than when that build ran, and PyInstaller's own SDK-rewrite
+  step (visible in its build log) evidently only patching one of the two
+  load-command styles. Left as-is: `minos`/`LSMinimumSystemVersion` (the
+  values macOS actually gates launch on) are correct and consistent on
+  both slices; the `sdk` field is informational only.
+- Discovered mid-task: a real machine folder named "Tiger" exists in the
+  distribution's Machines/ folder, pointed at the user's actual
+  `/Volumes/Macdata/qemu/hd/10.4.img` and a real CD image, with a
+  `last-run.log` -- the user has already used this app for real. Left
+  completely untouched throughout; flagging so nobody mistakes it for
+  test debris and deletes it.
+
 ---
 ## LOG (first session, pre-resume -- historical, corrected by the STATE OF PLAY above)
 ---
