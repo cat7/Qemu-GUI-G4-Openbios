@@ -29,8 +29,8 @@ FIXTURE_QEMU_DIR = {
     "mac99-os9.json": "/Applications/qemu-system-ppc-smp-usb-rage-openbios-based",
 }
 
-# The user's reference launch line, verbatim (given 2026-09-14). Two
-# deliberate divergences from it, both explained where the comparison
+# The user's reference launch line, verbatim (given 2026-09-14). Three
+# deliberate divergences from it, all explained where the comparison
 # accounts for them below:
 #  * this GUI does not emit adb-mouse.extended-protocol under via=pmu --
 #    mac_newworld.c creates no ADB device in that mode, so the property has
@@ -38,6 +38,10 @@ FIXTURE_QEMU_DIR = {
 #  * this GUI always wires a persistent nvram.img (macio-nvram.drive=nvr +
 #    the paired -drive), which the reference line does not do -- mac99's
 #    NVRAM is otherwise volatile (see mac99_model.py's module docstring).
+#  * the reference line carries no explicit -nic at all, relying on QEMU's
+#    own default NIC (mc->default_nic = "sungem", added automatically
+#    because neither -nic nor -net none was given); this GUI is explicit
+#    about it, the way the g3beige GUI is explicit about model=bmac.
 USER_MAC99_OSX = r"""
 ./qemu-system-ppc \
 -L ./pc-bios \
@@ -80,6 +84,8 @@ def user_tokens(text: str, qemu_dir: str) -> set[str]:
             filtered.pop()  # drop the preceding "-global" too
             continue
         filtered.append(t)
+    # the reference line has no explicit -nic; this GUI always emits one
+    filtered += ["-nic", "user,model=sungem,mac=00:05:02:12:34:56"]
     return set(filtered)
 
 
@@ -89,12 +95,23 @@ def load_fixture(name: str) -> Machine:
 
 def gen_tokens(m: Machine, qemu_dir: str, platform: str = "darwin") -> set[str]:
     argv = command.build_argv(m, qemu_dir, str(FIXTURES), platform)
-    toks = set(argv[1:])
-    # the reference line has no persisted NVRAM; strip our addition for the
-    # comparison, and check it separately (test_nvram_is_wired below).
-    toks -= {"-drive", f"if=none,id=nvr,file={FIXTURES}/nvram.img,format=raw",
-            "-global", "macio-nvram.drive=nvr"}
-    return toks
+    rest = argv[1:]
+    # the reference line has no persisted NVRAM; drop our addition (as
+    # adjacent flag/value pairs, not from the token set -- "-drive" and
+    # "-global" are shared with other options) and check it separately
+    # (test_nvram_is_wired below).
+    nvram_pairs = [("-drive", f"if=none,id=nvr,file={FIXTURES}/nvram.img,format=raw"),
+                  ("-global", "macio-nvram.drive=nvr")]
+    out = []
+    i = 0
+    while i < len(rest):
+        pair = (rest[i], rest[i + 1]) if i + 1 < len(rest) else None
+        if pair in nvram_pairs:
+            i += 2
+            continue
+        out.append(rest[i])
+        i += 1
+    return set(out)
 
 
 class UserLauncher(unittest.TestCase):
