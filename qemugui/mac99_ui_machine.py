@@ -17,8 +17,8 @@ from tkinter import ttk, filedialog, messagebox
 
 from . import paths
 from . import mac99_model as model
-from .mac99_model import Machine, AtaDrive, UsbStorage, Gpu, Network, PromEnv
-from .mac99_systems import SYSTEMS, system_labels, system_by_label
+from . import mac99_theme
+from .mac99_model import Machine, AtaDrive, Gpu, Network, PromEnv
 from .mac99_ui_dialogs import show_validation
 
 KIND_LABELS = {"": "Empty", "disk": "Hard disk", "cdrom": "CD"}
@@ -106,38 +106,15 @@ class AtaRow:
         return AtaDrive(kind=k, file=self.file.get().strip(), format=self.format.get() or "raw")
 
 
-class UsbRow:
-    """One USB mass-storage device: -drive if=none + -device usb-storage."""
-
-    def __init__(self, master, row: int, label: str, fallback=None):
-        self.file = tk.StringVar()
-        self.format = tk.StringVar(value="raw")
-        ttk.Label(master, text=label).grid(row=row, column=0, sticky="w", padx=(0, 4), pady=1)
-        self.picker = FilePicker(master, self.file, IMAGE_TYPES, width=40, fallback=fallback)
-        self.picker.grid(row=row, column=1, sticky="ew", padx=2, pady=1)
-        ttk.Combobox(master, textvariable=self.format, values=model.FORMATS, state="readonly",
-                    width=6).grid(row=row, column=2, padx=2)
-
-    def set_usb(self, u: UsbStorage | None):
-        self.file.set(u.file if u else "")
-        self.format.set((u.format if u else "raw") or "raw")
-
-    def get_usb(self) -> UsbStorage | None:
-        if not self.file.get().strip():
-            return None
-        return UsbStorage(self.file.get().strip(), self.format.get() or "raw")
-
-
 class MachineEditor(tk.Toplevel):
     """One machine's settings. ``on_save(machine, old_name)`` runs after
     checking. With ``is_new`` the same window opens empty; nothing exists on
     disk until Save."""
 
-    USB_SLOTS = 2
-
     def __init__(self, parent, machine: Machine, library: model.Library, qemu_dir: str, on_save,
                 is_new: bool = False):
         super().__init__(parent)
+        mac99_theme.apply(self)
         self.machine = machine.copy()
         self.old_name = machine.name
         self.is_new = is_new
@@ -192,13 +169,6 @@ class MachineEditor(tk.Toplevel):
         self.name_entry = ttk.Entry(f, textvariable=self.name_var, width=40)
         self.name_entry.grid(row=r, column=1, sticky="ew", pady=4)
         r += 1
-        ttk.Label(f, text="System:").grid(row=r, column=0, sticky="w", pady=4)
-        self.system_var = tk.StringVar()
-        system_box = ttk.Combobox(f, textvariable=self.system_var, values=system_labels(),
-                                  state="readonly", width=20)
-        system_box.grid(row=r, column=1, sticky="w", pady=4)
-        system_box.bind("<<ComboboxSelected>>", self._system_chosen)
-        r += 1
         ttk.Label(f, text="Memory:").grid(row=r, column=0, sticky="w", pady=4)
         self.ram_var = tk.StringVar()
         ttk.Combobox(f, textvariable=self.ram_var, values=[str(x) for x in model.RAM_CHOICES],
@@ -208,6 +178,9 @@ class MachineEditor(tk.Toplevel):
         self.smp_var = tk.StringVar()
         ttk.Spinbox(f, textvariable=self.smp_var, from_=model.SMP_MIN, to=model.SMP_MAX,
                    width=5).grid(row=r, column=1, sticky="w", pady=4)
+        r += 1
+        ttk.Label(f, text="Mac OS 9 loses keyboard control with 2+ CPUs; Mac OS X may use up to 4.",
+                 foreground=GREY).grid(row=r, column=0, columnspan=2, sticky="w")
         r += 1
         ttk.Label(f, text="Via:").grid(row=r, column=0, sticky="w", pady=4)
         self.via_var = tk.StringVar()
@@ -255,7 +228,11 @@ class MachineEditor(tk.Toplevel):
             self.vnc_entry.config(state="disabled")
 
     def _gpu_changed(self, _e=None):
-        pass
+        """The Rage 128 Pro needs OpenBIOS's own vga driver kept out of the
+        way; no card means the normal driver is fine. Only sets a sensible
+        starting point -- the Advanced tab's checkbox can still be changed
+        by hand afterwards."""
+        self.no_vga_driver_var.set(self.gpu_on.get())
 
     def _build_drives(self):
         f = self._tab("Drives")
@@ -270,17 +247,6 @@ class MachineEditor(tk.Toplevel):
             ttk.Label(ata, text=h, foreground=GREY).grid(row=0, column=c, sticky="w", padx=4)
         self.ata_rows = [AtaRow(ata, 1 + i, model.ata_slot_name(i), fallback=self.machine_folder)
                         for i in range(len(model.ATA_SLOTS))]
-        r += 1
-        ttk.Separator(f).grid(row=r, column=0, sticky="ew", pady=8)
-        r += 1
-        ttk.Label(f, text="USB storage", font=("", 0, "bold")).grid(
-            row=r, column=0, sticky="w", pady=(0, 4))
-        r += 1
-        usb = ttk.Frame(f)
-        usb.grid(row=r, column=0, sticky="ew")
-        usb.columnconfigure(1, weight=1)
-        self.usb_rows = [UsbRow(usb, i, f"Device {i}", fallback=self.machine_folder)
-                        for i in range(self.USB_SLOTS)]
 
     def _build_net_audio(self):
         f = self._tab("Network & sound")
@@ -325,25 +291,26 @@ class MachineEditor(tk.Toplevel):
         f.columnconfigure(1, weight=1)
         ttk.Label(f, text="OpenBIOS", font=("", 0, "bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 4))
-        self.autoboot_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(f, text="auto-boot?", variable=self.autoboot_var).grid(
+        self.boot_into_ofw_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(f, text="Boot into Open Firmware",
+                       variable=self.boot_into_ofw_var).grid(
             row=1, column=0, columnspan=2, sticky="w")
-        self.vgandrv_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(f, text="vga-ndrv?", variable=self.vgandrv_var).grid(
+        self.no_vga_driver_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(f, text="Do not load vga driver (required when running with the "
+                                "ATI Rage128 Pro)",
+                       variable=self.no_vga_driver_var).grid(
             row=2, column=0, columnspan=2, sticky="w")
-        ttk.Label(f, text="boot-device:").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(f, text="Rebuilt every start; a Restart from inside the Mac keeps its "
+                          "own choices instead.", foreground=GREY).grid(
+            row=3, column=0, columnspan=2, sticky="w")
+        ttk.Label(f, text="boot-device:").grid(row=4, column=0, sticky="w", pady=(6, 0))
         self.boot_device_var = tk.StringVar()
         ttk.Entry(f, textvariable=self.boot_device_var, width=30).grid(
-            row=3, column=1, sticky="w", pady=(6, 0))
-        ttk.Label(f, text="boot-args:").grid(row=4, column=0, sticky="w", pady=(6, 0))
+            row=4, column=1, sticky="w", pady=(6, 0))
+        ttk.Label(f, text="boot-args:").grid(row=5, column=0, sticky="w", pady=(6, 0))
         self.boot_args_var = tk.StringVar()
         ttk.Entry(f, textvariable=self.boot_args_var, width=30).grid(
-            row=4, column=1, sticky="w", pady=(6, 0))
-        ttk.Label(f, text="Firmware override:").grid(row=5, column=0, sticky="w", pady=(10, 0))
-        self.firmware_var = tk.StringVar()
-        FilePicker(f, self.firmware_var, ROM_TYPES, width=40,
-                  fallback=lambda: self.qemu_dir).grid(row=5, column=1, sticky="ew", padx=2,
-                                                       pady=(10, 0))
+            row=5, column=1, sticky="w", pady=(6, 0))
         ttk.Separator(f).grid(row=6, column=0, columnspan=3, sticky="ew", pady=10)
         ttk.Label(f, text="Additional command line arguments", font=("", 0, "bold")).grid(
             row=7, column=0, columnspan=3, sticky="w", pady=(0, 4))
@@ -351,17 +318,8 @@ class MachineEditor(tk.Toplevel):
         ttk.Entry(f, textvariable=self.extra_var, width=70).grid(
             row=8, column=0, columnspan=3, sticky="ew")
 
-    def _system_chosen(self, _event=None):
-        if not self.is_new:
-            return
-        s = system_by_label(self.system_var.get())
-        self.ram_var.set(str(s.ram_mb))
-        self.smp_var.set(str(s.smp))
-        self.via_var.set(s.via)
-
     def load(self, m: Machine):
         self.name_var.set(m.name)
-        self.system_var.set(SYSTEMS[m.system].label)
         self.ram_var.set(str(m.ram_mb))
         self.smp_var.set(str(m.smp))
         self.via_var.set(m.via)
@@ -377,25 +335,22 @@ class MachineEditor(tk.Toplevel):
             self.gpu_rom_var.set("")
         for i, row in enumerate(self.ata_rows):
             row.set_ata(m.ata[i] if i < len(m.ata) else None)
-        for i, row in enumerate(self.usb_rows):
-            row.set_usb(m.usb_storage[i] if i < len(m.usb_storage) else None)
         self.net_mode_cb.config(values=model.network_labels_for_host(current=m.network.mode))
         self.net_mode.set(model.network_mode_label(m.network.mode))
         self.mac_var.set(m.network.mac)
         self.ifname_var.set(m.network.ifname)
         self._net_mode_changed()
         self.audio_var.set(m.audio)
-        self.autoboot_var.set(m.prom_env.auto_boot)
-        self.vgandrv_var.set(m.prom_env.vga_ndrv)
+        # inverted: the checkbox asks the opposite question from the field
+        self.boot_into_ofw_var.set(not m.prom_env.auto_boot)
+        self.no_vga_driver_var.set(not m.prom_env.vga_ndrv)
         self.boot_device_var.set(m.prom_env.boot_device)
         self.boot_args_var.set(m.prom_env.boot_args)
-        self.firmware_var.set(m.firmware)
         self.extra_var.set(m.extra_args)
 
     def collect(self) -> Machine:
         m = self.machine.copy()
         m.name = self.name_var.get().strip()
-        m.system = system_by_label(self.system_var.get()).id
         try:
             m.ram_mb = int(self.ram_var.get().strip())
         except ValueError:
@@ -409,14 +364,12 @@ class MachineEditor(tk.Toplevel):
         m.vnc = self.vnc_var.get().strip() if self.vnc_on.get() else ""
         m.gpu = Gpu(self.gpu_rom_var.get().strip() or None) if self.gpu_on.get() else None
         m.ata = [row.get_ata() for row in self.ata_rows]
-        m.usb_storage = [u for u in (row.get_usb() for row in self.usb_rows) if u]
         mode = model.network_mode_by_label(self.net_mode.get())
         ifname = self.ifname_var.get().strip() if mode in model.NETWORK_MODES_WITH_IFNAME else ""
         m.network = Network(mode, self.mac_var.get().strip(), ifname)
         m.audio = self.audio_var.get()
-        m.prom_env = PromEnv(self.autoboot_var.get(), self.vgandrv_var.get(),
+        m.prom_env = PromEnv(not self.boot_into_ofw_var.get(), not self.no_vga_driver_var.get(),
                              self.boot_device_var.get().strip(), self.boot_args_var.get().strip())
-        m.firmware = self.firmware_var.get().strip()
         m.extra_args = self.extra_var.get().strip()
         return m
 

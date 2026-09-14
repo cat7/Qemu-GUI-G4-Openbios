@@ -1,12 +1,10 @@
 {
   "schema": 1,
   "name": "Mac OS 9.2",
-  "system": "macos9",
   "machine": "mac99",
   "via": "pmu",
   "ram_mb": 512,
   "smp": 1,
-  "firmware": "",
   "display": "sdl",
   "audio": "default",
   "gpu": {

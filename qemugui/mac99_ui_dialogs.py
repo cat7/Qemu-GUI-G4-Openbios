@@ -3,8 +3,11 @@ delete confirmation, reset NVRAM, and create a disk. A new machine is not one
 of them -- it opens the settings window straight away, on the Machine page.
 
 Mirrors :mod:`qemugui.ui_dialogs`'s shape; the difference is what a machine
-folder can hold (no SCSI, a USB stick list instead) and what "reset" means
-(mac99 has one persisted file, ``nvram.img``, no ``pram.img``).
+folder can hold (no SCSI) and what "reset" means (mac99 has one persisted
+file, ``nvram.img``, no ``pram.img`` -- and unlike g3beige, that file's
+contents are rebuilt from this GUI's own fields at every start regardless,
+see :mod:`qemugui.mac99_model`, so resetting it mainly clears what the
+running Mac itself wrote there during its last continuous run).
 """
 
 from __future__ import annotations
@@ -56,10 +59,13 @@ def confirm_delete(parent, name: str, will_go: list[str], will_stay: list[str],
 
 
 def confirm_reset_saved_settings(parent, name: str) -> bool:
-    """Deleting nvram.img is pulling the battery on this Mac: it forgets its
-    start-up disk and its other Open Firmware settings. It asks first
-    because those are settings a person chose."""
-    text = "You are about to delete the boot preferences (NVRAM) for this machine."
+    """This machine rebuilds its NVRAM from this GUI's own fields at every
+    start regardless (see mac99_model.py's module docstring), so deleting
+    nvram.img mainly forgets what the Mac itself saved there during its
+    last continuous run -- a start-up disk chosen from inside Mac OS, or a
+    setenv typed at the Open Firmware prompt. It asks first because those
+    are settings a person chose."""
+    text = "You are about to delete what this Mac saved for itself last time."
     return messagebox.askyesno("Reset NVRAM", text, icon="warning",
                                default="no", parent=parent)
 
@@ -97,6 +103,9 @@ class CreateDiskDialog(simpledialog.Dialog):
         super().__init__(parent, "New hard disk")
 
     def body(self, master):
+        from . import mac99_theme
+        mac99_theme.apply(self)
+        master.configure(background=mac99_theme.BG)
         r = 0
         ttk.Label(master, text="Name:").grid(row=r, column=0, sticky="w", padx=4, pady=3)
         self.name_var = tk.StringVar(value="hard disk")

@@ -1,12 +1,10 @@
 {
   "schema": 1,
   "name": "Mac OS X 10.4",
-  "system": "macosx",
   "machine": "mac99",
   "via": "pmu",
   "ram_mb": 1024,
   "smp": 4,
-  "firmware": "",
   "display": "sdl",
   "audio": "default",
   "gpu": {

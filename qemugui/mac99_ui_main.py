@@ -12,10 +12,10 @@ from tkinter import ttk, messagebox
 
 from . import mac99_command as command
 from . import mac99_model as model
+from . import mac99_theme
 from . import paths
 from .mac99_model import Machine, Library
 from .paths import Settings
-from .mac99_systems import SYSTEMS, system_ids
 from .mac99_ui_dialogs import ask_name, confirm_delete, confirm_reset_saved_settings, open_folder
 from .mac99_ui_machine import MachineEditor
 
@@ -82,6 +82,7 @@ def start_machine(m: Machine, machine_dir: Path) -> RunningMachine:
 class MainWindow(tk.Tk):
     def __init__(self, settings: Settings, settings_path: Path | None = None):
         super().__init__()
+        mac99_theme.apply(self)
         self.settings = settings
         self.settings_path = settings_path or paths.settings_path()
         self.library = Library()
@@ -201,8 +202,7 @@ class MainWindow(tk.Tk):
             self.tree.delete(item)
         for m in self.library.load_all():
             state = "running" if m.name in self.running else ""
-            self.tree.insert("", "end", iid=m.name,
-                             values=(f"{m.name}   ({SYSTEMS[m.system].label})", state))
+            self.tree.insert("", "end", iid=m.name, values=(m.name, state))
         names = self.library.names()
         if current in names:
             self.tree.selection_set(current)
@@ -278,7 +278,7 @@ class MainWindow(tk.Tk):
         return f"{s // 3600} hour{'' if s // 3600 == 1 else 's'} {(s % 3600) // 60} min"
 
     def new_machine(self):
-        m = model.new_machine("", system_ids()[0])
+        m = model.new_machine("")
         MachineEditor(self, m, self.library, qemu_dir(), self._on_editor_save, is_new=True)
 
     def duplicate_machine(self):

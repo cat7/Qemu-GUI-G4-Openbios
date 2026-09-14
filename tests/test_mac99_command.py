@@ -19,7 +19,7 @@ sys.path.insert(0, str(HERE.parent))
 
 from qemugui import mac99_command as command  # noqa: E402
 from qemugui import mac99_model as model  # noqa: E402
-from qemugui import paths, mac99_systems as systems  # noqa: E402
+from qemugui import paths  # noqa: E402
 from qemugui.mac99_model import Machine, AtaDrive, UsbStorage, Gpu, Network, PromEnv  # noqa: E402
 
 FIXTURES = HERE / "fixtures"
@@ -160,13 +160,6 @@ class Options(unittest.TestCase):
         errors, _ = model.validate(m, None, "darwin", check_files=False)
         self.assertTrue(any("via pmu or pmu-adb" in e for e in errors))
 
-    def test_os9_multi_cpu_warns(self):
-        m = load_fixture("mac99-os9.json")
-        m.smp = 2
-        errors, warnings = model.validate(m, None, "darwin", check_files=False)
-        self.assertEqual(errors, [])
-        self.assertTrue(any("keyboard control" in w for w in warnings))
-
     def test_adb_mouse_global_gated_on_via(self):
         m = self.base()
         m.via = "pmu"
@@ -228,6 +221,10 @@ class Options(unittest.TestCase):
                                   "file=/d.iso,format=raw,media=cdrom,index=3"])
 
     def test_usb_storage(self):
+        """Candidate only: not verified on any guest here, and there is no
+        editor UI to add one (user review, 2026-09-14). Kept and tested at
+        the record/command layer so a machine.json edited by hand still
+        works, and so this is ready the day someone runs that test."""
         m = self.base()
         m.usb_storage = [UsbStorage("/mem1.img", "raw"), UsbStorage("/mem2.img", "raw")]
         argv = command.build_argv(m, "", "/m", "darwin")
@@ -271,18 +268,14 @@ class Options(unittest.TestCase):
         argv = command.build_argv(m, "/install", "/m", "darwin")
         self.assertEqual(argv[argv.index("-L") + 1], "/install/pc-bios")
 
-    def test_firmware_override(self):
-        m = self.base()
-        m.firmware = "custom-openbios.bin"
-        argv = command.build_argv(m, "/install", "/m", "darwin")
-        self.assertIn("-bios", argv)
-        self.assertEqual(argv[argv.index("-bios") + 1], "/install/custom-openbios.bin")
-
-    def test_no_firmware_override_means_no_bios_flag(self):
-        m = self.base()
-        m.firmware = ""
-        argv = command.build_argv(m, "/install", "/m", "darwin")
-        self.assertNotIn("-bios", argv)
+    def test_there_is_no_firmware_override(self):
+        """-L ./pc-bios is fixed by the distribution layout; there is
+        nothing on this machine that needs a different OpenBIOS binary, so
+        the option was removed rather than shipped unused (user review,
+        2026-09-14)."""
+        self.assertFalse(hasattr(Machine(), "firmware"))
+        src = (HERE.parent / "qemugui" / "mac99_command.py").read_text()
+        self.assertNotIn('"-bios"', src)          # "pc-bios" itself stays
 
     def test_comma_in_path_is_escaped_for_qemu(self):
         m = self.base()
@@ -387,8 +380,8 @@ class JsonRoundTrip(unittest.TestCase):
             self.assertEqual(json.loads(m.to_json())["schema"], model.SCHEMA)
 
     def test_full_record_round_trip(self):
-        m = Machine(name="Every field", system="macosx", via="cuda", ram_mb=1536, smp=1,
-                    firmware="custom.bin", display="cocoa", vnc=":2", audio="none",
+        m = Machine(name="Every field", via="cuda", ram_mb=1536, smp=1,
+                    display="cocoa", vnc=":2", audio="none",
                     gpu=Gpu("card.rom"),
                     network=Network("user", "00:11:22:33:44:55"),
                     ata=[AtaDrive("disk", "/a.img", "qcow2"), None, AtaDrive("cdrom", "/c.iso"), None],
@@ -404,24 +397,31 @@ class JsonRoundTrip(unittest.TestCase):
 class NothingIsChosenForYou(unittest.TestCase):
 
     def test_a_new_machine_has_every_file_field_empty(self):
-        for system_id in systems.system_ids():
-            m = model.new_machine("Fresh", system_id)
-            for field, value in model.file_fields(m).items():
-                self.assertEqual(value, "", f"{system_id}: {field} was filled in")
-            self.assertIsNone(m.gpu)
-            self.assertEqual(m.notes, "")
+        m = model.new_machine("Fresh")
+        for field, value in model.file_fields(m).items():
+            self.assertEqual(value, "", f"{field} was filled in")
+        self.assertIsNone(m.gpu)
+        self.assertEqual(m.notes, "")
 
     def test_a_new_machine_needs_nothing_before_it_can_start(self):
         """Unlike g3beige, mac99's firmware is bundled with the
         distribution, not an Apple ROM the person must supply."""
-        m = model.new_machine("Fresh", "macos9")
+        m = model.new_machine("Fresh")
         self.assertEqual(model.start_blockers(m), [])
 
-    def test_system_seeds_smp_and_via(self):
-        m9 = model.new_machine("nine", "macos9")
-        self.assertEqual((m9.smp, m9.via), (1, "pmu"))
-        mx = model.new_machine("ten-four", "macosx")
-        self.assertEqual((mx.smp, mx.via), (4, "pmu"))
+    def test_a_new_machine_defaults_to_one_cpu_and_via_pmu(self):
+        """There is no system-type selection any more (no governor on this
+        machine, nothing to select): every new machine starts the same way,
+        and whoever wants more CPUs turns it up themselves (user review,
+        2026-09-14)."""
+        m = model.new_machine("t")
+        self.assertEqual((m.smp, m.via, m.ram_mb), (1, "pmu", 512))
+
+    def test_there_is_no_system_type_left(self):
+        self.assertFalse(hasattr(Machine(), "system"))
+        src = (HERE.parent / "qemugui" / "mac99_ui_machine.py").read_text()
+        for gone in ("System:", "system_var", "_system_chosen"):
+            self.assertNotIn(gone, src, gone)
 
 
 class LibraryOps(unittest.TestCase):
@@ -429,7 +429,7 @@ class LibraryOps(unittest.TestCase):
     def test_create_save_duplicate_delete(self):
         with tempfile.TemporaryDirectory() as td:
             lib = model.Library(td)
-            m = model.new_machine("Mac OS X", "macosx")
+            m = model.new_machine("Mac OS X")
             lib.save(m)
             (lib.folder("Mac OS X") / "nvram.img").write_bytes(b"\0" * 8192)
             self.assertEqual(lib.names(), ["Mac OS X"])

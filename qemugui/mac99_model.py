@@ -7,8 +7,8 @@ conventions (paths.py): one Machines folder beside the program, one folder
 per machine, nothing ever fills in a file for you, no disk image is ever
 deleted.
 
-Ground truth (verified in ``qemu-ppc-smp``, branch ``smp-audio-usb``, tip
-``76f2383475``):
+Ground truth (verified in ``qemu-ppc-smp``, branch ``smp-audio-usb``, HEAD
+``4987ce252f``):
 
 * No SCSI: ``hw/ppc/mac_newworld.c`` instantiates no MESH/SCSI controller.
 * No floppy: ``hw/ppc/mac_newworld.c:300``, "We consider that NewWorld
@@ -16,11 +16,25 @@ Ground truth (verified in ``qemu-ppc-smp``, branch ``smp-audio-usb``, tip
 * Four IDE slots, index 0..3: ``MAX_IDE_BUS`` (2) x ``MAX_IDE_DEVS`` (2),
   same indexing convention as g3beige.
 * NVRAM (``macio-nvram``) has a ``drive`` property
-  (``hw/nvram/mac_nvram.c``) but ``mac_newworld.c`` does not set it, so it is
-  volatile unless a drive is explicitly attached -- which this GUI does, so
-  each machine gets a persistent ``nvram.img`` the way the g3beige GUI's
-  machines do. There is no PRAM equivalent for mac99: neither via mode wires
-  a "pram" drive anywhere in this tree.
+  (``hw/nvram/mac_nvram.c:140``) but ``mac_newworld.c`` does not set it by
+  default, so this GUI attaches one itself (``-global macio-nvram.drive``),
+  giving each machine folder a persistent ``nvram.img``. BUT
+  ``hw/ppc/mac_newworld.c:561`` calls ``pmac_format_nvram_partition()``
+  UNCONDITIONALLY at every machine start -- no check against what the drive
+  already holds -- and that function (``hw/nvram/mac_nvram.c:206-215``,
+  building on ``chrp_nvram_create_system_partition()``,
+  ``hw/nvram/chrp_nvram.c:48-86``, itself an unconditional rebuild from the
+  ``-prom-env`` flags of THAT invocation) rewrites the whole thing from
+  scratch every time. So the persisted file only matters for what survives
+  a warm Restart performed *inside* a single running QEMU process (that
+  does not re-run machine init); anything the guest saves to NVRAM is
+  discarded the moment the process is quit and started again, because the
+  next start rebuilds the system partition from this GUI's own -prom-env
+  fields regardless of what is on disk. There is no separate PRAM file or
+  partition for Mac OS 9 here: whatever Mac OS 9 keeps in PRAM on this
+  machine type lives in the same one NVRAM structure Open Firmware uses
+  (``hw/nvram/mac_nvram.c:184-203`` formats a second, OS X labelled half of
+  the same chip, also unconditionally, also every boot).
 * Default NIC is sungem: ``mc->default_nic = "sungem"`` (mac_newworld.c).
 * ``-vga none`` is needed only because the machine otherwise adds a default
   "std" VGA card of its own (``mc->default_display = "std"``); leaving the
@@ -42,7 +56,8 @@ from pathlib import Path
 from typing import Any
 
 from . import paths
-from .mac99_systems import SYSTEMS, DEFAULT_MAC, normalise_system_id
+
+DEFAULT_MAC = "00:05:02:12:34:56"
 
 SCHEMA = 1
 NAME_RE = re.compile(r"^[A-Za-z0-9._ -]+$")
@@ -217,12 +232,18 @@ def default_ifname(mode: str, platform: str = paths.HOST_PLATFORM) -> str:
 
 @dataclass
 class PromEnv:
-    """OpenBIOS nvram variables seeded fresh on every boot via ``-prom-env``,
-    independent of whatever is in the persisted NVRAM. Keys OpenBIOS reads on
+    """OpenBIOS nvram variables rebuilt from scratch at every single machine
+    start (``hw/ppc/mac_newworld.c:561``, unconditional, no check against
+    the persisted NVRAM -- see the module docstring). Keys OpenBIOS reads on
     this path: ``auto-boot?``, ``boot-device``, ``boot-args``, ``vga-ndrv?``
-    (roms/openbios/arch/ppc/qemu/init.c)."""
+    (roms/openbios/arch/ppc/qemu/init.c).
+
+    ``vga_ndrv`` defaults to True (let OpenBIOS load its own vga driver),
+    sensible with no graphics card chosen; the editor flips it to False the
+    moment the Rage 128 Pro is turned on, because that card needs OpenBIOS's
+    own driver kept out of the way."""
     auto_boot: bool = True
-    vga_ndrv: bool = False
+    vga_ndrv: bool = True
     boot_device: str = ""
     boot_args: str = ""
 
@@ -233,19 +254,17 @@ class PromEnv:
     def from_dict(cls, d: Any) -> "PromEnv":
         if not isinstance(d, dict):
             return cls()
-        return cls(bool(d.get("auto_boot", True)), bool(d.get("vga_ndrv", False)),
+        return cls(bool(d.get("auto_boot", True)), bool(d.get("vga_ndrv", True)),
                    str(d.get("boot_device", "")), str(d.get("boot_args", "")))
 
 
 @dataclass
 class Machine:
     name: str = "New machine"
-    system: str = "other"
     machine: str = "mac99"
     via: str = "pmu"              # cuda | pmu | pmu-adb
     ram_mb: int = 512
     smp: int = 1
-    firmware: str = ""            # advanced override for -bios; "" = OpenBIOS default
     display: str = "cocoa"
     vnc: str = ""                  # "" = off; else a -vnc display spec, e.g. ":1"
     audio: str = "default"
@@ -261,12 +280,10 @@ class Machine:
         return {
             "schema": SCHEMA,
             "name": self.name,
-            "system": self.system,
             "machine": self.machine,
             "via": self.via,
             "ram_mb": self.ram_mb,
             "smp": self.smp,
-            "firmware": self.firmware,
             "display": self.display,
             "vnc": self.vnc,
             "audio": self.audio,
@@ -288,12 +305,10 @@ class Machine:
         usb = [u for u in (UsbStorage.from_dict(x) for x in d.get("usb_storage") or []) if u]
         return cls(
             name=str(d.get("name", "New machine")),
-            system=normalise_system_id(d.get("system")),
             machine=str(d.get("machine", "mac99")),
             via=str(d.get("via") or "pmu"),
             ram_mb=int(d.get("ram_mb", 512)),
             smp=int(d.get("smp", 1) or 1),
-            firmware=str(d.get("firmware", "") or ""),
             display=str(d.get("display") or default_display()),
             vnc=str(d.get("vnc", "") or ""),
             audio=str(d.get("audio", "default")),
@@ -348,19 +363,17 @@ class Machine:
         return [f for _label, f in _image_files(self) if f]
 
 
-def new_machine(name: str, system_id: str) -> Machine:
-    """Seed a record from one of the systems: memory, CPU count and via
-    mode. No file field is ever filled in."""
-    p = SYSTEMS[normalise_system_id(system_id)]
-    m = Machine(name=name, system=p.id, ram_mb=p.ram_mb, smp=p.smp, via=p.via,
-               display=default_display())
-    m.ata = [None, None, None, None]
-    return m
+def new_machine(name: str) -> Machine:
+    """A fresh record: one CPU, via pmu, no drive, no GPU. There is no
+    governor and no system-type profile on this machine -- a name is all
+    "New machine" asks for. Whoever wants more than one CPU turns it up
+    themselves; the CPU field's own help text says what that costs on
+    Mac OS 9. No file field is ever filled in."""
+    return Machine(name=name, display=default_display())
 
 
 def file_fields(m: Machine) -> dict[str, str]:
-    fields = {"firmware": m.firmware or "",
-              "gpu.romfile": (m.gpu.romfile or "") if m.gpu else ""}
+    fields = {"gpu.romfile": (m.gpu.romfile or "") if m.gpu else ""}
     for i, d in enumerate(m.ata):
         fields[f"ata[{i}]"] = d.file if d else ""
     for i, u in enumerate(m.usb_storage):
@@ -394,8 +407,6 @@ def validate(m: Machine, qemu_dir: str | None, platform: str = paths.HOST_PLATFO
         errors.append(f"CPUs has to be between {SMP_MIN} and {SMP_MAX}.")
     elif m.smp > 1 and m.via not in ("pmu", "pmu-adb"):
         errors.append("More than one CPU needs via pmu or pmu-adb.")
-    if m.system == "macos9" and m.smp > 1:
-        warnings.append("Mac OS 9 loses keyboard control with more than one CPU.")
     if m.display == "cocoa" and platform != "darwin":
         warnings.append("'cocoa' only works on a Mac.")
     if m.vnc.strip() and not VNC_RE.match(m.vnc.strip()):
@@ -430,12 +441,10 @@ def validate(m: Machine, qemu_dir: str | None, platform: str = paths.HOST_PLATFO
     if check_files:
         qd = qemu_dir or ""
         if qd and paths.has_qemu(qd, platform):
-            for label, rel in (("The firmware override", m.firmware),
-                               ("The graphics card's ROM",
-                                m.gpu.romfile if m.gpu else None)):
-                if rel and not Path(paths.join_path(qd, rel, platform)).is_file():
-                    warnings.append(f"{label} is missing: "
-                                    f"{paths.join_path(qd, rel, platform)}")
+            rel = m.gpu.romfile if m.gpu else None
+            if rel and not Path(paths.join_path(qd, rel, platform)).is_file():
+                warnings.append("The graphics card's ROM is missing: "
+                                f"{paths.join_path(qd, rel, platform)}")
         for label, f in _image_files(m):
             if not f:
                 continue
