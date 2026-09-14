@@ -91,8 +91,6 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
     argv: list[str] = [paths.join_path(qd, paths.qemu_binary_name(platform), platform)]
 
     argv += ["-L", _path(PC_BIOS_DIR, qd, platform)]
-    if m.firmware:
-        argv += ["-bios", _path(m.firmware, qd, platform)]
     argv += ["-M", machine_option(m)]
     argv += ["-smp", str(int(m.smp))]
     # VNC and a local display window are mutually exclusive here: -display
