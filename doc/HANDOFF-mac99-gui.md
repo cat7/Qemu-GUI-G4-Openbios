@@ -3,8 +3,10 @@
 Read this before doing anything else on the mac99 GUI task; do not trust a
 compacted summary over this file. The pause/resume narrative below (from
 the first work session, 2026-09-14 morning) is kept as historical record;
-this section is the current state as of the SECOND session (2026-09-14
-afternoon), which finished the deliverables.
+the STATE OF PLAY and addenda below are current as of the THIRD session
+(2026-09-14, evening -- Windows parity, see that addendum at the bottom of
+this section), on top of the SECOND session (2026-09-14 afternoon), which
+finished the original deliverables.
 
 ## STATE OF PLAY (read this, not the log below)
 
@@ -145,6 +147,104 @@ PyInstaller --noconfirm Mac99GUI.spec` (universal2, confirmed
 first, then the new one copied in). Nothing else in that folder was
 touched -- `Machines/` (including the real "Tiger" machine) and every other
 top-level file kept their prior mtimes; no zip was made.
+
+## Addendum: Windows parity (2026-09-14, later that evening)
+
+Task: give the mac99 GUI the same platform coverage as the g3beige GUI --
+`.bat` vs `.command` launchers, which network/audio backends a host offers,
+the `qemu-system-ppc[.exe]` binary name, sudo/Terminal handling -- without
+touching mac99's own device set (sungem NIC always explicit, screamer audio,
+no SCSI/floppy) and without undoing the native-aqua theme work above. No
+QEMU boots, no PyInstaller run for Windows (there is no Windows host here):
+source-level parity plus headless tests only.
+
+**Already correct before this session** (mac99 was already calling the
+right shared code, not reimplementing it):
+
+- `paths.py`'s `is_windows`, `qemu_binary_name`, `qemu_img_name`,
+  `launcher_name`, `join_path` -- `mac99_command.py` and `mac99_model.py`
+  called these directly, exactly like `command.py`/`model.py` do. The
+  `.exe` suffix, `run.bat`/`run.command` naming, and backslash-vs-slash path
+  joining needed no change.
+- `mac99_ui_main.py`'s `start_selected()` -- the `command.needs_sudo(m)` /
+  `paths.HOST_PLATFORM != "darwin"` guard and the `start_in_terminal`
+  fallback are already a line-for-line match of `ui_main.py`'s.
+- The actual QEMU-visible behavior: `mac99_command.build_argv` already
+  resolved `audio="default"` through the same `{"darwin": "coreaudio",
+  "win32": "dsound"}` table `command.py` uses, and `mac99_model.py` already
+  restricted `NETWORK_MODES` to the same per-platform table (`vmnet-*` ->
+  darwin only, `tap` -> win32 only). Given a platform argument, the two
+  families always produced the same shaped output. Confirmed by running the
+  existing test suite with these facts as the hypothesis before changing
+  anything.
+
+**What was actually wrong**: not a behavior gap, a *reuse* gap. Every piece
+above existed as a byte-for-byte duplicate in `mac99_command.py`/
+`mac99_model.py` rather than a call into `command.py`/`model.py` or a
+shared module -- `qopt`, `split_extra_args`, `group_options`, `bat_quote`,
+the sudo keepalive/chown-line strings, `render_shell`/`render_bat`/
+`render_launcher`, `DISPLAYS`/`default_display`, and the whole
+`NETWORK_MODES`/`NETWORK_MODE_PLATFORM`/`network_modes_for_host` family.
+Two independent copies of the same platform mechanics is exactly the thing
+that silently drifts the next time one side gets fixed and the other
+doesn't.
+
+**Fix**: moved all of it into `paths.py` -- already the one file in this
+tree documented as "no Tk in here, platform strings follow `sys.platform`"
+-- and had both `model.py`/`mac99_model.py` and `command.py`/
+`mac99_command.py` import the same functions/constants instead of keeping
+private copies. `command.py` and `mac99_command.py` keep their own
+`HEADER_NOTE` and owned-settings-files tuple (g3beige chowns back
+`nvram.img pram.img`, mac99 only `nvram.img` -- there is no PRAM file on
+this machine, see the module docstring) and pass those into the shared
+`paths.render_shell`/`render_bat`/`render_launcher`. Nothing about mac99's
+device set changed; `governor_option`, `nic_option` (sungem), the
+`-global screamer.audiodev=` wiring, `prom_env_tokens`, and the missing
+SCSI/floppy code paths are untouched. `machine.json` still carries no
+platform field on either side -- the same record renders correctly on
+whichever host opens it, because the launcher/offered-backend logic reads
+the *current* `paths.HOST_PLATFORM`, never anything stored in the record.
+
+New tests, `tests/test_mac99_command.py::WindowsParity` (mirrors
+`tests/test_command.py`'s existing platform-forcing pattern: pass
+`platform="win32"`/`"darwin"` straight into the pure functions, no
+`sys.platform` mocking anywhere in this codebase):
+
+- `test_windows_launcher` -- `write_launcher(..., platform="win32")`
+  produces `run.bat`, binary is `...\qemu-system-ppc.exe`, the file uses
+  `" ^\r\n"` continuations and never `" \\\r\n"`, contains no `sudo`,
+  resolves audio to `dsound,id=snd` and never mentions `coreaudio`; and
+  `model.network_modes_for_host("win32")` offers `tap` and excludes every
+  `vmnet-*` mode.
+- `test_macos_launcher` -- the mirror image: `run.command`, `\` line
+  continuations, no `.exe` anywhere, `coreaudio,id=snd` and never
+  `dsound`; `network_modes_for_host("darwin")` offers all three `vmnet-*`
+  modes and excludes `tap`.
+- `test_audio_backend_resolves_per_host` -- same-shape assertion as
+  `test_command.py`'s existing `coreaudio`/`dsound` pair, added for mac99
+  because it did not have one.
+
+Full suite: 161 passing (158 previously-passing plus these 3; nothing else
+changed shape). Commit `c02bfec` on `mac99-openbios`.
+
+**Not done, deliberately**: `mac99_ui_dialogs.py::open_folder` is still a
+byte-for-byte duplicate of `ui_dialogs.py::open_folder` (Finder/Explorer/
+xdg-open dispatch) except for the error dialog's title string. Left alone
+-- it is UI-layer (imports `tkinter.messagebox`, so it cannot move into the
+Tk-free `paths.py`) and outside the explicit ask (launcher format, backend
+allow-lists, binary name, sudo/Terminal), not a platform-availability bug.
+Worth converging the same way if this file ever gets touched for another
+reason.
+
+**App rebuild**: not done. This session's changes are an internal reuse
+refactor -- same argv, same rendered launcher bytes, same offered
+backends, confirmed by the full test suite (including golden-output tests
+that check exact rendered content) passing unchanged before and after.
+Nothing observable on this macOS host changed, so the already-rebuilt
+`.app` in `/Users/hsp/src/_ppc_g4_mac99_openbios_for_emaculation` was left
+as the previous session (theme fix) built it. `Machines/` in that folder
+(including the real "Tiger" machine) and every other file there were not
+touched, and no zip was made.
 
 ---
 ## LOG (first session, pre-resume -- historical, corrected by the STATE OF PLAY above)
