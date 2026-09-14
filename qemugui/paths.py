@@ -2,9 +2,9 @@
 beside it, and the Machines folder beside it.
 
 There is no configurable QEMU folder and no configurable machine library.
-Qemu-system-ppc GUI is a companion to one copy of ``qemu-system-ppc``: it lives in the
-same folder as that program, and keeps its machines in a ``Machines`` folder
-next to itself.
+This program is a companion to one copy of ``qemu-system-ppc``: it lives in
+the same folder as that program, and keeps its machines in a ``Machines``
+folder next to itself.
 
 No Tk in here. Platform strings follow ``sys.platform``: ``darwin``,
 ``win32``, anything else is treated as Linux/POSIX.
@@ -19,13 +19,13 @@ import sys
 from dataclasses import dataclass, asdict
 from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 
-APP_NAME = "Qemu-system-ppc GUI"
+APP_NAME = "Qemu-system-ppc Mac99 openbios GUI"
 HOST_PLATFORM = sys.platform  # "darwin" | "win32" | "linux"
 
 MACHINES_DIR_NAME = "Machines"
 SETTINGS_FILE_NAME = "settings.json"
 
-# The folder holding qemu_gui.py, used when running from source.
+# The folder holding the entry script, used when running from source.
 SOURCE_ROOT = Path(__file__).resolve().parent.parent
 
 # Set only by the tests and by tools/ scripts, which must not touch the real
@@ -43,7 +43,7 @@ def use_install_dir(folder: Path | str | None) -> None:
 def resolve_install_dir(*, frozen: bool, executable: str, source_root: str) -> Path:
     """The folder a person sees this program in. Three cases:
 
-    * running from source -- the folder holding ``qemu_gui.py``;
+    * running from source -- the folder holding the entry script;
     * frozen inside a macOS application bundle -- ``sys.executable`` is
       ``.../Qemu-system-ppc GUI.app/Contents/MacOS/Qemu-system-ppc GUI``, several levels below the
       folder the bundle itself sits in, so walk up out of the ``.app``;

@@ -1,8 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller spec for Qemu-system-ppc Mac99 openbios GUI.
 #
-# Same recipe as QemuGUI.spec (the g3beige app): build with the python.org
-# universal2 framework Python, which has a working tkinter on both arches --
+# Build with the python.org universal2 framework Python, which has a
+# working tkinter on both arches --
 #
 #   /Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13 \
 #       -m PyInstaller --noconfirm Mac99GUI.spec

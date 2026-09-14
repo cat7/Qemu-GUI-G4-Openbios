@@ -17,13 +17,13 @@
   "ata": [
     {
       "kind": "disk",
-      "file": "/Volumes/Macdata/qemu/hd/10.4.img",
+      "file": "/images/10.4.img",
       "format": "raw"
     },
     null,
     {
       "kind": "cdrom",
-      "file": "/Users/hsp/Downloads/Chessmaster9000.iso",
+      "file": "/images/Chessmaster9000.iso",
       "format": "raw"
     },
     null

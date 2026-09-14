@@ -17,7 +17,7 @@
   "ata": [
     {
       "kind": "disk",
-      "file": "/Volumes/Macdata/qemu/hd/9.2-G4.img",
+      "file": "/images/9.2-G4.img",
       "format": "raw"
     },
     null,

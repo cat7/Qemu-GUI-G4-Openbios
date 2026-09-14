@@ -54,8 +54,8 @@ USER_MAC99_OSX = r"""
 -global adb-mouse.extended-protocol=on \
 -audiodev coreaudio,id=snd -global screamer.audiodev=snd \
 -device ati-rage128-pro,romfile=./ati_rage128pro_136_agp.rom \
--drive file=/Volumes/Macdata/qemu/hd/10.4.img,format=raw,media=disk,index=0 \
--drive file=/Users/hsp/Downloads/Chessmaster9000.iso,format=raw,media=cdrom,index=2 \
+-drive file=/images/10.4.img,format=raw,media=disk,index=0 \
+-drive file=/images/Chessmaster9000.iso,format=raw,media=cdrom,index=2 \
 -prom-env 'auto-boot?=true' \
 -prom-env 'vga-ndrv?=false'
 """
