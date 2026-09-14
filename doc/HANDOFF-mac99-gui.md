@@ -1,8 +1,53 @@
-# HANDOFF: mac99 openbios GUI (paused mid-session)
+# HANDOFF: mac99 openbios GUI
 
-Paused on request at 2026-09-14, resume after 11:10 local. Branch `mac99`,
-last commit `bade6a1` in this tree. Read this before doing anything else on
-the mac99 GUI task; do not trust a compacted summary over this file.
+Read this before doing anything else on the mac99 GUI task; do not trust a
+compacted summary over this file. The pause/resume narrative below (from
+the first work session, 2026-09-14 morning) is kept as historical record;
+this section is the current state as of the SECOND session (2026-09-14
+afternoon), which finished the deliverables.
+
+## STATE OF PLAY (read this, not the log below)
+
+Branch **`mac99-openbios`** (renamed from `mac99` mid-task -- there is a
+DIFFERENT, unrelated mac99 tree, `qemu-mac99`, booting a real Apple ROM;
+`mac99-openbios` disambiguates which one this GUI targets). Every finding
+below came from `/Users/hsp/src/claude-code/qemu-ppc-smp`, branch
+`smp-audio-usb`, and its already-built binary
+`build-smp/qemu-system-ppc` -- NOT from `qemu-mac99` or
+`/Applications/qemu-system-ppc-mac99`.
+
+Done: GUI code (record/command/systems/UI layers, 9 files), 150 headless
+tests all passing (venv:
+`/Users/hsp/PycharmProjects/QemuGUI-PPC/.venv/bin/python`), two bugs found
+and fixed on review (a dead function name in reset_nvram; a missing
+nvram.img causing every fresh machine's first Start to fail -- both now
+covered by regression tests), a VNC display option added (confirmed
+functional by the build session, wired here as `-display none -vnc <spec>`
+and unit-tested), the universal (arm64+x86_64) `.app` built with
+PyInstaller and copied into the distribution folder, two ready Machines/
+records (Mac OS 9.2, Mac OS X 10.4 -- both with the ATI ROM attached, no
+disk), Readme-ppc-mac99.txt written, and the one authorized smoke start
+(disk-less, `-display none`, QMP `query-status`/`quit`) run twice against
+`build-smp/qemu-system-ppc` (once pre-fix reproducing the nvram bug, once
+post-fix confirming it).
+
+Not done by this session, owned by the separate build session: the
+universal `qemu-system-ppc`/`qemu-img` binaries, `Libs_arm64/`,
+`Libs_x86_64/`, `pc-bios/`, the ATI ROM copy, and the final zip -- as of
+last check those were all present in the distribution folder except the
+zip. Re-check before telling the user the folder is finished.
+
+Open questions for the user, not resolved by either session: whether Mac OS
+9.2 should ship with the GPU attached by default (this session gave it one,
+on the reasoning that it is the only graphics option this GUI offers, but
+9.x's use of it is untested here); whether VNC-on-mac99 specifically (as
+opposed to `-machine none`, which the build session verified) has been
+end-to-end verified -- the build session's own resume notes flag this as
+still open on their side.
+
+---
+## LOG (first session, pre-resume -- historical, corrected by the STATE OF PLAY above)
+---
 
 ## Task in one line
 
