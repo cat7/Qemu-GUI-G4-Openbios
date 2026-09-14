@@ -216,6 +216,8 @@ def write_launcher(m: Machine, qemu_dir: str, machine_dir: str,
     from pathlib import Path
     import os
     import stat
+    from .mac99_model import ensure_nvram_file
+    ensure_nvram_file(machine_dir)
     argv = build_argv(m, qemu_dir, machine_dir, platform)
     text = render_launcher(argv, platform, needs_sudo(m, platform))
     path = Path(machine_dir) / paths.launcher_name(platform)

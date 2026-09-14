@@ -82,6 +82,18 @@ NVRAM_FILE = "nvram.img"
 NVRAM_SIZE = 8192            # MACIO_NVRAM_SIZE (include/hw/nvram/mac_nvram.h)
 SAVED_SETTINGS_FILES = (NVRAM_FILE,)
 
+
+def ensure_nvram_file(machine_dir: str | Path) -> Path:
+    """The backing file for -global macio-nvram.drive=nvr. QEMU's raw file
+    block driver does not create a missing file, so without this the very
+    first Start on a fresh machine fails ("Could not open nvram.img"). Never
+    touches a file that already exists -- Reset NVRAM deletes it, and the
+    next Start should hand OpenBIOS a blank slate, not silently restore one."""
+    p = Path(machine_dir) / NVRAM_FILE
+    if not p.exists():
+        p.write_bytes(b"\0" * NVRAM_SIZE)
+    return p
+
 OWNED_FILES = ("machine.json", "run.command", "run.bat", "last-run.log",
               NVRAM_FILE, ".DS_Store")
 

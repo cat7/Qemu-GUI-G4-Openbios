@@ -423,6 +423,27 @@ class LibraryOps(unittest.TestCase):
             path2, _ = command.write_launcher(m, "/q", td, "darwin")
             self.assertIn("-m 2048", path2.read_text())
 
+    def test_write_launcher_creates_nvram_if_missing(self):
+        """QEMU's raw file driver does not create a missing file: without
+        this, the very first Start on a fresh machine fails with "Could not
+        open nvram.img" (reproduced against the real binary before this
+        fix)."""
+        with tempfile.TemporaryDirectory() as td:
+            m = load_fixture("mac99-osx.json")
+            nvram = Path(td) / "nvram.img"
+            self.assertFalse(nvram.exists())
+            command.write_launcher(m, "/q", td, "darwin")
+            self.assertTrue(nvram.is_file())
+            self.assertEqual(nvram.stat().st_size, model.NVRAM_SIZE)
+
+    def test_write_launcher_never_overwrites_existing_nvram(self):
+        with tempfile.TemporaryDirectory() as td:
+            m = load_fixture("mac99-osx.json")
+            nvram = Path(td) / "nvram.img"
+            nvram.write_bytes(b"\x01" * model.NVRAM_SIZE)
+            command.write_launcher(m, "/q", td, "darwin")
+            self.assertEqual(nvram.read_bytes(), b"\x01" * model.NVRAM_SIZE)
+
 
 if __name__ == "__main__":
     unittest.main()
