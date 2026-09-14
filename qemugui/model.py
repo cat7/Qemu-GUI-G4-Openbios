@@ -26,6 +26,13 @@ from pathlib import Path
 from typing import Any
 
 from . import paths
+# Host-platform mechanics -- which display/network choices exist and which of
+# them this host can offer -- live in paths.py, shared with mac99_model.py.
+# Re-exported here so existing callers keep using model.DISPLAYS etc.
+from .paths import (DISPLAYS, default_display, AUDIO_DEFAULT,
+                    NETWORK_MODES, NETWORK_MODE_PLATFORM, NETWORK_MODES_WITH_IFNAME,
+                    NETWORK_MODE_LABELS, network_mode_label, network_mode_by_label,
+                    network_modes_for_host, network_labels_for_host, default_ifname)
 from .systems import (SYSTEMS, DEFAULT_MAC, DEFAULT_SECOND_GPU_ADDR,
                       DEFAULT_DISK_IDENTITY, DEFAULT_CDROM_IDENTITY,
                       normalise_system_id)
@@ -60,19 +67,8 @@ SCSI_SELF_LABEL = "Macintosh"
 
 DRIVE_KINDS = ("disk", "cdrom")
 FORMATS = ("raw", "qcow2")
-DISPLAYS = {"darwin": ("cocoa", "sdl"), "win32": ("sdl", "gtk"), "linux": ("sdl", "gtk")}
 
-
-def default_display(platform: str = paths.HOST_PLATFORM) -> str:
-    """The first choice offered on this computer, which is what a new machine
-    starts with: ``cocoa`` on a Mac, ``sdl`` anywhere else."""
-    return DISPLAYS.get("win32" if paths.is_windows(platform) else platform, ("sdl",))[0]
 AUDIO_MODES = ("default", "sdl", "none")
-NETWORK_MODES = ("none", "user", "vmnet-bridged", "vmnet-shared", "vmnet-host", "tap")
-# platform each mode is meant for (None = all); "darwin" | "win32"
-NETWORK_MODE_PLATFORM = {"none": None, "user": None, "vmnet-bridged": "darwin",
-                         "vmnet-shared": "darwin", "vmnet-host": "darwin", "tap": "win32"}
-NETWORK_MODES_WITH_IFNAME = ("vmnet-bridged", "tap")
 GOVERNOR_MODES = ("default", "off", "mips")
 RAM_CHOICES = (128, 256, 512, 768, 1024)
 RAM_MIN, RAM_MAX = 32, 4096
@@ -212,40 +208,6 @@ class Network:
     @property
     def platform(self) -> str | None:
         return NETWORK_MODE_PLATFORM.get(self.mode)
-
-
-NETWORK_MODE_LABELS = {"user": "default (slirp)"}
-
-
-def network_mode_label(mode: str) -> str:
-    return NETWORK_MODE_LABELS.get(mode, mode)
-
-
-def network_mode_by_label(label: str) -> str:
-    for mode, shown in NETWORK_MODE_LABELS.items():
-        if shown == label:
-            return mode
-    return label
-
-
-def network_labels_for_host(platform: str = paths.HOST_PLATFORM,
-                            current: str | None = None) -> list[str]:
-    return [network_mode_label(m) for m in network_modes_for_host(platform, current)]
-
-
-def network_modes_for_host(platform: str = paths.HOST_PLATFORM, current: str | None = None) -> list[str]:
-    """Modes the editor offers on *platform*, plus whatever the record holds."""
-    host = "win32" if paths.is_windows(platform) else platform
-    out = [m for m in NETWORK_MODES if NETWORK_MODE_PLATFORM[m] in (None, host)]
-    if current and current not in out:
-        out.append(current)
-    return out
-
-
-def default_ifname(mode: str, platform: str = paths.HOST_PLATFORM) -> str:
-    if mode == "vmnet-bridged" and platform == "darwin":
-        return "en0"
-    return ""
 
 
 @dataclass

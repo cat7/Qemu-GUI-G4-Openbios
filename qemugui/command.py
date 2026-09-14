@@ -10,38 +10,20 @@ here only keeps each token whole. One argv list, two renderings.
 
 from __future__ import annotations
 
-import shlex
-
 from . import paths
+from .paths import qopt, split_extra_args, group_options, bat_quote, SUDO_KEEPALIVE  # re-exported
 from .model import Machine
 
 HEADER_NOTE = "Written by Qemu-system-ppc GUI. Do not edit."
 
-AUDIO_DEFAULT = {"darwin": "coreaudio", "win32": "dsound"}
-
-
-def qopt(value: str) -> str:
-    """Escape a value for QEMU's key=value option parser (comma -> ,,)."""
-    return str(value).replace(",", ",,")
+# Kept for anything still reading command.AUDIO_DEFAULT directly; the
+# resolution itself goes through paths.resolve_audio.
+AUDIO_DEFAULT = paths.AUDIO_DEFAULT
 
 
 def _path(p: str, base: str, platform: str) -> str:
     """Absolute path for *platform*; relative values resolve against *base*."""
     return paths.join_path(base, p, platform)
-
-
-def split_extra_args(text: str, platform: str = paths.HOST_PLATFORM) -> list[str]:
-    """Tokenise the free-text extra arguments line. On Windows backslashes are
-    path separators, not escapes, so escape processing is disabled there."""
-    text = (text or "").strip()
-    if not text:
-        return []
-    lex = shlex.shlex(text, posix=True)
-    lex.whitespace_split = True
-    lex.commentchars = ""
-    if paths.is_windows(platform):
-        lex.escape = ""
-    return list(lex)
 
 
 def governor_option(m: Machine) -> str:
@@ -70,7 +52,7 @@ def nic_option(net) -> str:
 
 def needs_sudo(m: Machine, platform: str = paths.HOST_PLATFORM) -> bool:
     """vmnet-* launchers run the binary under sudo (macOS only; never in a .bat)."""
-    return m.network.needs_sudo and not paths.is_windows(platform)
+    return paths.sudo_applies(m.network.needs_sudo, platform)
 
 
 def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
@@ -90,9 +72,7 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
         argv += ["-bios", _path(m.rom, qd, platform)]
     argv += ["-display", m.display]
 
-    audio = m.audio
-    if audio == "default":
-        audio = AUDIO_DEFAULT.get(platform, "sdl")
+    audio = paths.resolve_audio(m.audio, platform)
     argv += ["-audiodev", f"{audio},id=snd", "-global", "awacs.audiodev=snd"]
 
     if m.onboard_romfile:
@@ -139,71 +119,22 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
     return argv
 
 
-def group_options(argv: list[str]) -> list[list[str]]:
-    """Group [binary, -opt, value, -opt, ...] into one list per option so
-    each option lands on its own line in the rendered launcher."""
-    groups: list[list[str]] = []
-    for tok in argv[1:]:
-        if tok.startswith("-") or not groups:
-            groups.append([tok])
-        else:
-            groups[-1].append(tok)
-    return groups
-
-
-# Ask for the password ONCE. Without the keep-alive, sudo's ticket expires
-# during any run longer than its timeout (5 minutes by default) and the chown
-# below prompts a second time, in the middle of the guest's own output.
-SUDO_KEEPALIVE = ('sudo -v\n'
-                  'while true; do sudo -n true; sleep 60; '
-                  'kill -0 "$$" 2>/dev/null || exit; done &\n'
-                  'SUDO_KEEPALIVE_PID=$!')
-CHOWN_LINE = ('kill "$SUDO_KEEPALIVE_PID" 2>/dev/null\n'
-              'sudo -n chown "${SUDO_USER:-$(id -un)}" nvram.img pram.img 2>/dev/null')
+# The saved-settings files a sudo run chowns back to the real user once QEMU
+# exits (it was root, so root owns whatever QEMU wrote).
+OWNED_SETTINGS_FILES = ("nvram.img", "pram.img")
 
 
 def render_shell(argv: list[str], sudo: bool = False) -> str:
-    lines = ["#!/bin/bash",
-             f"# {HEADER_NOTE}",
-             'cd "$(dirname "$0")"',
-             ""]
-    if sudo:
-        lines += [SUDO_KEEPALIVE, ""]
-    lines.append(("sudo " if sudo else "") + shlex.quote(argv[0]) + " \\")
-    groups = group_options(argv)
-    for i, g in enumerate(groups):
-        cont = " \\" if i < len(groups) - 1 else ""
-        lines.append(" ".join(shlex.quote(t) for t in g) + cont)
-    if sudo:
-        lines += ["", CHOWN_LINE]
-    return "\n".join(lines) + "\n"
-
-
-def bat_quote(token: str) -> str:
-    """cmd.exe quoting: whole-token double quotes when the token contains a
-    space or a comma (contract rule); '%' must be doubled in a .bat file."""
-    t = token.replace("%", "%%")
-    if (" " in t or "," in t) and not (t.startswith('"') and t.endswith('"')):
-        return f'"{t}"'
-    return t
+    return paths.render_shell(argv, HEADER_NOTE, OWNED_SETTINGS_FILES, sudo)
 
 
 def render_bat(argv: list[str]) -> str:
-    lines = ["@echo off",
-             f"rem {HEADER_NOTE}",
-             'cd /d "%~dp0"',
-             "",
-             bat_quote(argv[0]) + " ^"]
-    groups = group_options(argv)
-    for i, g in enumerate(groups):
-        cont = " ^" if i < len(groups) - 1 else ""
-        lines.append(" ".join(bat_quote(t) for t in g) + cont)
-    return "\r\n".join(lines) + "\r\n"
+    return paths.render_bat(argv, HEADER_NOTE)
 
 
 def render_launcher(argv: list[str], platform: str = paths.HOST_PLATFORM, sudo: bool = False) -> str:
     """The .bat never gets sudo; *sudo* only affects the shell rendering."""
-    return render_bat(argv) if paths.is_windows(platform) else render_shell(argv, sudo)
+    return paths.render_launcher(argv, HEADER_NOTE, platform, sudo, OWNED_SETTINGS_FILES)
 
 
 def launcher_text(m: Machine, qemu_dir: str, machine_dir: str,

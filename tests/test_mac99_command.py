@@ -473,5 +473,55 @@ class LibraryOps(unittest.TestCase):
             self.assertEqual(nvram.read_bytes(), b"\x01" * model.NVRAM_SIZE)
 
 
+class WindowsParity(unittest.TestCase):
+    """The same host-platform mechanics as qemugui.command / qemugui.model
+    (see tests/test_command.py), now exercised for mac99: one argv, two
+    renderings, and a network/audio backend choice restricted per host.
+    Forcing platform="win32" here never touches this machine, which is
+    always darwin -- see paths.py's own platform-string contract."""
+
+    def test_windows_launcher(self):
+        with tempfile.TemporaryDirectory() as td:
+            m = load_fixture("mac99-osx.json")
+            path, argv = command.write_launcher(m, r"C:\mac99", td, "win32")
+            self.assertEqual(path.name, "run.bat")
+            self.assertEqual(argv[0], r"C:\mac99\qemu-system-ppc.exe")
+            # read the raw bytes: text-mode reads would normalise \r\n away
+            raw = path.read_bytes().decode("utf-8")
+            self.assertIn(" ^\r\n", raw)
+            self.assertNotIn(" \\\r\n", raw)
+            self.assertNotIn("sudo", raw)
+            self.assertIn("dsound,id=snd", raw)
+            self.assertNotIn("coreaudio", raw)
+
+        offered = model.network_modes_for_host("win32")
+        self.assertIn("tap", offered)
+        for gone in ("vmnet-bridged", "vmnet-shared", "vmnet-host"):
+            self.assertNotIn(gone, offered)
+
+    def test_macos_launcher(self):
+        with tempfile.TemporaryDirectory() as td:
+            m = load_fixture("mac99-osx.json")
+            path, argv = command.write_launcher(m, "/Applications/qemu99", td, "darwin")
+            self.assertEqual(path.name, "run.command")
+            self.assertEqual(argv[0], "/Applications/qemu99/qemu-system-ppc")
+            raw = path.read_bytes().decode("utf-8")
+            self.assertIn(" \\\n", raw)
+            self.assertNotIn(" ^\r\n", raw)
+            self.assertNotIn(".exe", raw)
+            self.assertIn("coreaudio,id=snd", raw)
+            self.assertNotIn("dsound", raw)
+
+        offered = model.network_modes_for_host("darwin")
+        for present in ("vmnet-bridged", "vmnet-shared", "vmnet-host"):
+            self.assertIn(present, offered)
+        self.assertNotIn("tap", offered)
+
+    def test_audio_backend_resolves_per_host(self):
+        m = load_fixture("mac99-osx.json")
+        self.assertIn("coreaudio,id=snd", command.build_argv(m, "", "/m", "darwin"))
+        self.assertIn("dsound,id=snd", command.build_argv(m, "", "/m", "win32"))
+
+
 if __name__ == "__main__":
     unittest.main()

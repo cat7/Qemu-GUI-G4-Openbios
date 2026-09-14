@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import sys
 from dataclasses import dataclass, asdict
 from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
@@ -122,6 +123,181 @@ def join_path(base: str, name: str, platform: str = HOST_PLATFORM) -> str:
     if n.is_absolute():
         return str(n)
     return str(pure_path(base, platform) / n)
+
+
+# ------------------------------------------------------- display defaults
+#
+# One home for the g3beige and mac99 GUIs both: neither machine record cares
+# which host it is edited on, but the choices offered while editing, and the
+# choice a brand new record starts with, do.
+
+DISPLAYS = {"darwin": ("cocoa", "sdl"), "win32": ("sdl", "gtk"), "linux": ("sdl", "gtk")}
+
+
+def default_display(platform: str = HOST_PLATFORM) -> str:
+    """The first choice offered on this computer, which is what a new machine
+    starts with: ``cocoa`` on a Mac, ``sdl`` anywhere else."""
+    return DISPLAYS.get("win32" if is_windows(platform) else platform, ("sdl",))[0]
+
+
+# --------------------------------------------------------- audio defaults
+
+AUDIO_DEFAULT = {"darwin": "coreaudio", "win32": "dsound"}
+
+
+def resolve_audio(audio: str, platform: str = HOST_PLATFORM) -> str:
+    """"default" resolves to this host's native backend (coreaudio on a Mac,
+    dsound on Windows); anything else (sdl, none) passes through unchanged."""
+    if audio != "default":
+        return audio
+    return AUDIO_DEFAULT.get(platform, "sdl")
+
+
+# ------------------------------------------------------- network backends
+
+NETWORK_MODES = ("none", "user", "vmnet-bridged", "vmnet-shared", "vmnet-host", "tap")
+# platform each mode is meant for (None = all); "darwin" | "win32"
+NETWORK_MODE_PLATFORM = {"none": None, "user": None, "vmnet-bridged": "darwin",
+                         "vmnet-shared": "darwin", "vmnet-host": "darwin", "tap": "win32"}
+NETWORK_MODES_WITH_IFNAME = ("vmnet-bridged", "tap")
+NETWORK_MODE_LABELS = {"user": "default (slirp)"}
+
+
+def network_mode_label(mode: str) -> str:
+    return NETWORK_MODE_LABELS.get(mode, mode)
+
+
+def network_mode_by_label(label: str) -> str:
+    for mode, shown in NETWORK_MODE_LABELS.items():
+        if shown == label:
+            return mode
+    return label
+
+
+def network_modes_for_host(platform: str = HOST_PLATFORM, current: str | None = None) -> list[str]:
+    """Modes the editor offers on *platform*, plus whatever the record holds."""
+    host = "win32" if is_windows(platform) else platform
+    out = [m for m in NETWORK_MODES if NETWORK_MODE_PLATFORM[m] in (None, host)]
+    if current and current not in out:
+        out.append(current)
+    return out
+
+
+def network_labels_for_host(platform: str = HOST_PLATFORM, current: str | None = None) -> list[str]:
+    return [network_mode_label(m) for m in network_modes_for_host(platform, current)]
+
+
+def default_ifname(mode: str, platform: str = HOST_PLATFORM) -> str:
+    if mode == "vmnet-bridged" and platform == "darwin":
+        return "en0"
+    return ""
+
+
+def sudo_applies(needs_sudo: bool, platform: str = HOST_PLATFORM) -> bool:
+    """vmnet-* launchers run the binary under sudo (macOS only; never in a
+    .bat)."""
+    return needs_sudo and not is_windows(platform)
+
+
+# ---------------------------------------------------------- launcher text
+#
+# The pure string-handling shared by every ``*_command.py`` module: QEMU
+# option escaping, extra-argument tokenising, grouping an argv into one
+# option per output line, and the two launcher renderings (shell / .bat).
+# What differs between machine families is only the header comment and which
+# files a sudo run chowns back at the end -- both are passed in.
+
+def qopt(value: str) -> str:
+    """Escape a value for QEMU's key=value option parser (comma -> ,,)."""
+    return str(value).replace(",", ",,")
+
+
+def split_extra_args(text: str, platform: str = HOST_PLATFORM) -> list[str]:
+    """Tokenise the free-text extra arguments line. On Windows backslashes are
+    path separators, not escapes, so escape processing is disabled there."""
+    text = (text or "").strip()
+    if not text:
+        return []
+    lex = shlex.shlex(text, posix=True)
+    lex.whitespace_split = True
+    lex.commentchars = ""
+    if is_windows(platform):
+        lex.escape = ""
+    return list(lex)
+
+
+def group_options(argv: list[str]) -> list[list[str]]:
+    """Group [binary, -opt, value, -opt, ...] into one list per option so
+    each option lands on its own line in the rendered launcher."""
+    groups: list[list[str]] = []
+    for tok in argv[1:]:
+        if tok.startswith("-") or not groups:
+            groups.append([tok])
+        else:
+            groups[-1].append(tok)
+    return groups
+
+
+# Ask for the password ONCE. Without the keep-alive, sudo's ticket expires
+# during any run longer than its timeout (5 minutes by default) and the chown
+# below prompts a second time, in the middle of the guest's own output.
+SUDO_KEEPALIVE = ('sudo -v\n'
+                  'while true; do sudo -n true; sleep 60; '
+                  'kill -0 "$$" 2>/dev/null || exit; done &\n'
+                  'SUDO_KEEPALIVE_PID=$!')
+
+
+def sudo_chown_line(owned_files: tuple[str, ...]) -> str:
+    return ('kill "$SUDO_KEEPALIVE_PID" 2>/dev/null\n'
+           f'sudo -n chown "${{SUDO_USER:-$(id -un)}}" {" ".join(owned_files)} 2>/dev/null')
+
+
+def render_shell(argv: list[str], header_note: str, owned_files: tuple[str, ...] = (),
+                 sudo: bool = False) -> str:
+    lines = ["#!/bin/bash",
+             f"# {header_note}",
+             'cd "$(dirname "$0")"',
+             ""]
+    if sudo:
+        lines += [SUDO_KEEPALIVE, ""]
+    lines.append(("sudo " if sudo else "") + shlex.quote(argv[0]) + " \\")
+    groups = group_options(argv)
+    for i, g in enumerate(groups):
+        cont = " \\" if i < len(groups) - 1 else ""
+        lines.append(" ".join(shlex.quote(t) for t in g) + cont)
+    if sudo:
+        lines += ["", sudo_chown_line(owned_files)]
+    return "\n".join(lines) + "\n"
+
+
+def bat_quote(token: str) -> str:
+    """cmd.exe quoting: whole-token double quotes when the token contains a
+    space or a comma (contract rule); '%' must be doubled in a .bat file."""
+    t = token.replace("%", "%%")
+    if (" " in t or "," in t) and not (t.startswith('"') and t.endswith('"')):
+        return f'"{t}"'
+    return t
+
+
+def render_bat(argv: list[str], header_note: str) -> str:
+    lines = ["@echo off",
+             f"rem {header_note}",
+             'cd /d "%~dp0"',
+             "",
+             bat_quote(argv[0]) + " ^"]
+    groups = group_options(argv)
+    for i, g in enumerate(groups):
+        cont = " ^" if i < len(groups) - 1 else ""
+        lines.append(" ".join(bat_quote(t) for t in g) + cont)
+    return "\r\n".join(lines) + "\r\n"
+
+
+def render_launcher(argv: list[str], header_note: str, platform: str = HOST_PLATFORM,
+                    sudo: bool = False, owned_files: tuple[str, ...] = ()) -> str:
+    """The .bat never gets sudo; *sudo* only affects the shell rendering."""
+    if is_windows(platform):
+        return render_bat(argv, header_note)
+    return render_shell(argv, header_note, owned_files, sudo)
 
 
 def browse_start_dir(current: str | None, fallback: Path | str | None = None) -> Path:

@@ -14,36 +14,21 @@ Order follows the user's own reference launcher (verbatim, given
 
 from __future__ import annotations
 
-import shlex
-
 from . import paths
+from .paths import qopt, split_extra_args, group_options, bat_quote, SUDO_KEEPALIVE  # re-exported
 from .mac99_model import Machine
 
 HEADER_NOTE = "Written by Qemu-system-ppc Mac99 openbios GUI. Do not edit."
 
-AUDIO_DEFAULT = {"darwin": "coreaudio", "win32": "dsound"}
+# Kept for anything still reading command.AUDIO_DEFAULT directly; the
+# resolution itself goes through paths.resolve_audio.
+AUDIO_DEFAULT = paths.AUDIO_DEFAULT
 
 PC_BIOS_DIR = "pc-bios"
 
 
-def qopt(value: str) -> str:
-    return str(value).replace(",", ",,")
-
-
 def _path(p: str, base: str, platform: str) -> str:
     return paths.join_path(base, p, platform)
-
-
-def split_extra_args(text: str, platform: str = paths.HOST_PLATFORM) -> list[str]:
-    text = (text or "").strip()
-    if not text:
-        return []
-    lex = shlex.shlex(text, posix=True)
-    lex.whitespace_split = True
-    lex.commentchars = ""
-    if paths.is_windows(platform):
-        lex.escape = ""
-    return list(lex)
 
 
 def machine_option(m: Machine) -> str:
@@ -67,7 +52,7 @@ def nic_option(net) -> str:
 
 
 def needs_sudo(m: Machine, platform: str = paths.HOST_PLATFORM) -> bool:
-    return m.network.needs_sudo and not paths.is_windows(platform)
+    return paths.sudo_applies(m.network.needs_sudo, platform)
 
 
 def prom_env_tokens(m: Machine) -> list[str]:
@@ -108,9 +93,7 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
     if m.has_adb():
         argv += ["-global", "adb-mouse.extended-protocol=on"]
 
-    audio = m.audio
-    if audio == "default":
-        audio = AUDIO_DEFAULT.get(platform, "sdl")
+    audio = paths.resolve_audio(m.audio, platform)
     argv += ["-audiodev", f"{audio},id=snd", "-global", "screamer.audiodev=snd"]
 
     if m.gpu:
@@ -150,63 +133,21 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
     return argv
 
 
-def group_options(argv: list[str]) -> list[list[str]]:
-    groups: list[list[str]] = []
-    for tok in argv[1:]:
-        if tok.startswith("-") or not groups:
-            groups.append([tok])
-        else:
-            groups[-1].append(tok)
-    return groups
-
-
-SUDO_KEEPALIVE = ('sudo -v\n'
-                  'while true; do sudo -n true; sleep 60; '
-                  'kill -0 "$$" 2>/dev/null || exit; done &\n'
-                  'SUDO_KEEPALIVE_PID=$!')
-CHOWN_LINE = ('kill "$SUDO_KEEPALIVE_PID" 2>/dev/null\n'
-              'sudo -n chown "${SUDO_USER:-$(id -un)}" nvram.img 2>/dev/null')
+# mac99 has no PRAM file (see mac99_model.py's module docstring): only
+# nvram.img is ever chowned back after a sudo run.
+OWNED_SETTINGS_FILES = ("nvram.img",)
 
 
 def render_shell(argv: list[str], sudo: bool = False) -> str:
-    lines = ["#!/bin/bash",
-             f"# {HEADER_NOTE}",
-             'cd "$(dirname "$0")"',
-             ""]
-    if sudo:
-        lines += [SUDO_KEEPALIVE, ""]
-    lines.append(("sudo " if sudo else "") + shlex.quote(argv[0]) + " \\")
-    groups = group_options(argv)
-    for i, g in enumerate(groups):
-        cont = " \\" if i < len(groups) - 1 else ""
-        lines.append(" ".join(shlex.quote(t) for t in g) + cont)
-    if sudo:
-        lines += ["", CHOWN_LINE]
-    return "\n".join(lines) + "\n"
-
-
-def bat_quote(token: str) -> str:
-    t = token.replace("%", "%%")
-    if (" " in t or "," in t) and not (t.startswith('"') and t.endswith('"')):
-        return f'"{t}"'
-    return t
+    return paths.render_shell(argv, HEADER_NOTE, OWNED_SETTINGS_FILES, sudo)
 
 
 def render_bat(argv: list[str]) -> str:
-    lines = ["@echo off",
-             f"rem {HEADER_NOTE}",
-             'cd /d "%~dp0"',
-             "",
-             bat_quote(argv[0]) + " ^"]
-    groups = group_options(argv)
-    for i, g in enumerate(groups):
-        cont = " ^" if i < len(groups) - 1 else ""
-        lines.append(" ".join(bat_quote(t) for t in g) + cont)
-    return "\r\n".join(lines) + "\r\n"
+    return paths.render_bat(argv, HEADER_NOTE)
 
 
 def render_launcher(argv: list[str], platform: str = paths.HOST_PLATFORM, sudo: bool = False) -> str:
-    return render_bat(argv) if paths.is_windows(platform) else render_shell(argv, sudo)
+    return paths.render_launcher(argv, HEADER_NOTE, platform, sudo, OWNED_SETTINGS_FILES)
 
 
 def launcher_text(m: Machine, qemu_dir: str, machine_dir: str,

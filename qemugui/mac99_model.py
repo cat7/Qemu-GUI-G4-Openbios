@@ -5,7 +5,10 @@ separate record shape from the g3beige one in :mod:`qemugui.model` -- the two
 machines share almost no options -- but the two GUIs share the same on-disk
 conventions (paths.py): one Machines folder beside the program, one folder
 per machine, nothing ever fills in a file for you, no disk image is ever
-deleted.
+deleted. They also share every host-platform mechanic verbatim (paths.py
+again): which display/network backends a given host offers, the audio
+backend "default" resolves to, and the .command/.bat launcher rendering --
+imported here, not reimplemented.
 
 Ground truth (verified in ``qemu-ppc-smp``, branch ``smp-audio-usb``, HEAD
 ``4987ce252f``):
@@ -56,6 +59,13 @@ from pathlib import Path
 from typing import Any
 
 from . import paths
+# Host-platform mechanics -- which display/network choices exist and which of
+# them this host can offer -- live in paths.py, shared with model.py (the
+# g3beige GUI).
+from .paths import (DISPLAYS, default_display, AUDIO_DEFAULT,
+                    NETWORK_MODES, NETWORK_MODE_PLATFORM, NETWORK_MODES_WITH_IFNAME,
+                    NETWORK_MODE_LABELS, network_mode_label, network_mode_by_label,
+                    network_modes_for_host, network_labels_for_host, default_ifname)
 
 DEFAULT_MAC = "00:05:02:12:34:56"
 
@@ -71,22 +81,13 @@ ATA_CD_SLOT = 2
 
 DRIVE_KINDS = ("disk", "cdrom")
 FORMATS = ("raw", "qcow2")
-DISPLAYS = {"darwin": ("cocoa", "sdl"), "win32": ("sdl", "gtk"), "linux": ("sdl", "gtk")}
 
 
 def ata_slot_name(i: int) -> str:
     return ATA_SLOTS[i]
 
 
-def default_display(platform: str = paths.HOST_PLATFORM) -> str:
-    return DISPLAYS.get("win32" if paths.is_windows(platform) else platform, ("sdl",))[0]
-
-
 AUDIO_MODES = ("default", "sdl", "none")
-NETWORK_MODES = ("none", "user", "vmnet-bridged", "vmnet-shared", "vmnet-host", "tap")
-NETWORK_MODE_PLATFORM = {"none": None, "user": None, "vmnet-bridged": "darwin",
-                         "vmnet-shared": "darwin", "vmnet-host": "darwin", "tap": "win32"}
-NETWORK_MODES_WITH_IFNAME = ("vmnet-bridged", "tap")
 VIA_MODES = ("cuda", "pmu", "pmu-adb")
 RAM_CHOICES = (512, 768, 1024, 1536, 2048)
 RAM_MIN, RAM_MAX = 64, 4096
@@ -196,38 +197,6 @@ class Network:
     @property
     def platform(self) -> str | None:
         return NETWORK_MODE_PLATFORM.get(self.mode)
-
-
-NETWORK_MODE_LABELS = {"user": "default (slirp)"}
-
-
-def network_mode_label(mode: str) -> str:
-    return NETWORK_MODE_LABELS.get(mode, mode)
-
-
-def network_mode_by_label(label: str) -> str:
-    for mode, shown in NETWORK_MODE_LABELS.items():
-        if shown == label:
-            return mode
-    return label
-
-
-def network_modes_for_host(platform: str = paths.HOST_PLATFORM, current: str | None = None) -> list[str]:
-    host = "win32" if paths.is_windows(platform) else platform
-    out = [m for m in NETWORK_MODES if NETWORK_MODE_PLATFORM[m] in (None, host)]
-    if current and current not in out:
-        out.append(current)
-    return out
-
-
-def network_labels_for_host(platform: str = paths.HOST_PLATFORM, current: str | None = None) -> list[str]:
-    return [network_mode_label(m) for m in network_modes_for_host(platform, current)]
-
-
-def default_ifname(mode: str, platform: str = paths.HOST_PLATFORM) -> str:
-    if mode == "vmnet-bridged" and platform == "darwin":
-        return "en0"
-    return ""
 
 
 @dataclass
