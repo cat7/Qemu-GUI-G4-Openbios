@@ -200,6 +200,24 @@ future fork inherited-memory context plus qemu-binary access without an
 explicit, repeated "no boot" guard, and verify after each fork completes
 that no process it spawned is still alive.
 
+## Addendum, written seconds after the above
+
+While staging the resume-notes commit, a NEW commit appeared on this same
+`mac99` branch that I did not make: `8f69f7a "mac99: the pure record and
+command layer, headless-tested"`, author `cat7`, touching only
+`tests/test_mac99_command.py` (25 insertions/8 deletions), timestamped
+2026-09-14 07:51:54, landed on top of my `bade6a1`. This confirms the other
+Claude session (or a teammate of it) is actively and concurrently committing
+to this exact branch/tree right now, under the same git identity as the
+user. That most likely explains the vanished command.py/model.py/paths.py/
+systems.py edits above: that session probably reset its own in-progress
+edit to those files deliberately, planning to re-land it after this
+commit, rather than anything being lost. Treat the "reconcile with the
+other session" step below as lower-urgency than it reads above -- it is
+plausibly already in hand -- but still confirm before editing those four
+files yourself, since two sessions writing the same files in the same
+working tree can still collide.
+
 ## What this session had NOT yet done at pause
 
 - Never got a completed report back from either of its own two research
