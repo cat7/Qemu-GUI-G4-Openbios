@@ -236,6 +236,24 @@ class MachineEditor(tk.Toplevel):
                   fallback=lambda: self.qemu_dir).grid(row=3, column=1, sticky="ew", padx=2,
                                                        pady=(6, 0))
 
+        ttk.Separator(f).grid(row=4, column=0, columnspan=2, sticky="ew", pady=10)
+        self.vnc_on = tk.BooleanVar(value=False)
+        ttk.Checkbutton(f, text="Show this Mac's screen over VNC instead",
+                       variable=self.vnc_on, command=self._vnc_changed).grid(
+            row=5, column=0, columnspan=2, sticky="w")
+        ttk.Label(f, text="VNC display (e.g. :1):").grid(row=6, column=0, sticky="w", pady=(6, 0))
+        self.vnc_var = tk.StringVar()
+        self.vnc_entry = ttk.Entry(f, textvariable=self.vnc_var, width=16)
+        self.vnc_entry.grid(row=6, column=1, sticky="w", pady=(6, 0))
+
+    def _vnc_changed(self, _e=None):
+        if self.vnc_on.get():
+            self.vnc_entry.config(state="normal")
+            if not self.vnc_var.get().strip():
+                self.vnc_var.set(":1")
+        else:
+            self.vnc_entry.config(state="disabled")
+
     def _gpu_changed(self, _e=None):
         pass
 
@@ -348,6 +366,9 @@ class MachineEditor(tk.Toplevel):
         self.smp_var.set(str(m.smp))
         self.via_var.set(m.via)
         self.display_var.set(m.display)
+        self.vnc_on.set(bool(m.vnc.strip()))
+        self.vnc_var.set(m.vnc)
+        self._vnc_changed()
         if m.gpu:
             self.gpu_on.set(True)
             self.gpu_rom_var.set(m.gpu.romfile or "")
@@ -385,6 +406,7 @@ class MachineEditor(tk.Toplevel):
             m.smp = -1
         m.via = self.via_var.get()
         m.display = self.display_var.get()
+        m.vnc = self.vnc_var.get().strip() if self.vnc_on.get() else ""
         m.gpu = Gpu(self.gpu_rom_var.get().strip() or None) if self.gpu_on.get() else None
         m.ata = [row.get_ata() for row in self.ata_rows]
         m.usb_storage = [u for u in (row.get_usb() for row in self.usb_rows) if u]

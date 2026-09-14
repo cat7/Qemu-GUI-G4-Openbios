@@ -290,6 +290,34 @@ class Options(unittest.TestCase):
         argv = command.build_argv(m, "", "/m", "darwin")
         self.assertIn("file=/Volumes/x/a,,b.img,format=raw,media=disk,index=0", argv)
 
+    def test_vnc_replaces_local_display(self):
+        """Confirmed working end-to-end against this machine type (5900+N
+        reachable) with exactly this combination: -display none, -vnc."""
+        m = self.base()
+        m.vnc = ":1"
+        argv = command.build_argv(m, "", "/m", "darwin")
+        self.assertEqual(argv[argv.index("-display") + 1], "none")
+        self.assertEqual(argv[argv.index("-vnc") + 1], ":1")
+
+    def test_no_vnc_means_normal_display_and_no_vnc_flag(self):
+        m = self.base()
+        m.vnc = ""
+        argv = command.build_argv(m, "", "/m", "darwin")
+        self.assertNotIn("-vnc", argv)
+        self.assertNotEqual(argv[argv.index("-display") + 1], "none")
+
+    def test_vnc_validation(self):
+        m = self.base()
+        m.vnc = "not a display"
+        errors, _ = model.validate(m, None, "darwin", check_files=False)
+        self.assertTrue(any("VNC display" in e for e in errors))
+        m.vnc = ":1"
+        errors, _ = model.validate(m, None, "darwin", check_files=False)
+        self.assertEqual(errors, [])
+        m.vnc = "127.0.0.1:9"
+        errors, _ = model.validate(m, None, "darwin", check_files=False)
+        self.assertEqual(errors, [])
+
     def test_extra_args_appended_verbatim(self):
         m = self.base()
         m.extra_args = "-qmp unix:/tmp/live.sock,server=on,wait=off"
@@ -360,7 +388,7 @@ class JsonRoundTrip(unittest.TestCase):
 
     def test_full_record_round_trip(self):
         m = Machine(name="Every field", system="macosx", via="cuda", ram_mb=1536, smp=1,
-                    firmware="custom.bin", display="cocoa", audio="none",
+                    firmware="custom.bin", display="cocoa", vnc=":2", audio="none",
                     gpu=Gpu("card.rom"),
                     network=Network("user", "00:11:22:33:44:55"),
                     ata=[AtaDrive("disk", "/a.img", "qcow2"), None, AtaDrive("cdrom", "/c.iso"), None],

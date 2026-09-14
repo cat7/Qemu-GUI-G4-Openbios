@@ -95,7 +95,13 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
         argv += ["-bios", _path(m.firmware, qd, platform)]
     argv += ["-M", machine_option(m)]
     argv += ["-smp", str(int(m.smp))]
-    argv += ["-display", m.display]
+    # VNC and a local display window are mutually exclusive here: -display
+    # none plus -vnc is the combination confirmed working end-to-end
+    # (5900+N listens, reachable) against this machine type.
+    if m.vnc.strip():
+        argv += ["-display", "none", "-vnc", m.vnc.strip()]
+    else:
+        argv += ["-display", m.display]
     argv += ["-m", str(int(m.ram_mb))]
     argv += ["-boot", "c"]
 

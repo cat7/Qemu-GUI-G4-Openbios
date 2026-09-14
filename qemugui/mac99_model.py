@@ -47,6 +47,7 @@ from .mac99_systems import SYSTEMS, DEFAULT_MAC, normalise_system_id
 SCHEMA = 1
 NAME_RE = re.compile(r"^[A-Za-z0-9._ -]+$")
 MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
+VNC_RE = re.compile(r"^([A-Za-z0-9.\-]*:)?\d+$")
 
 # The four positions on the built-in IDE cable (index 0..3): two channels,
 # master and slave each, same convention g3beige uses.
@@ -246,6 +247,7 @@ class Machine:
     smp: int = 1
     firmware: str = ""            # advanced override for -bios; "" = OpenBIOS default
     display: str = "cocoa"
+    vnc: str = ""                  # "" = off; else a -vnc display spec, e.g. ":1"
     audio: str = "default"
     gpu: Gpu | None = None
     network: Network = field(default_factory=Network)
@@ -266,6 +268,7 @@ class Machine:
             "smp": self.smp,
             "firmware": self.firmware,
             "display": self.display,
+            "vnc": self.vnc,
             "audio": self.audio,
             "gpu": self.gpu.to_dict() if self.gpu else None,
             "network": self.network.to_dict(),
@@ -292,6 +295,7 @@ class Machine:
             smp=int(d.get("smp", 1) or 1),
             firmware=str(d.get("firmware", "") or ""),
             display=str(d.get("display") or default_display()),
+            vnc=str(d.get("vnc", "") or ""),
             audio=str(d.get("audio", "default")),
             gpu=Gpu.from_dict(d.get("gpu")),
             network=Network.from_dict(d.get("network")),
@@ -394,6 +398,8 @@ def validate(m: Machine, qemu_dir: str | None, platform: str = paths.HOST_PLATFO
         warnings.append("Mac OS 9 loses keyboard control with more than one CPU.")
     if m.display == "cocoa" and platform != "darwin":
         warnings.append("'cocoa' only works on a Mac.")
+    if m.vnc.strip() and not VNC_RE.match(m.vnc.strip()):
+        errors.append("VNC display has to look like :1 or 127.0.0.1:1.")
 
     net = m.network
     if net.mode not in NETWORK_MODES:
