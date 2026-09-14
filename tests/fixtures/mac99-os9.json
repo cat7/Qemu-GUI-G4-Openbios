@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "name": "Mac OS 9.2",
+  "system": "macos9",
+  "machine": "mac99",
+  "via": "pmu",
+  "ram_mb": 512,
+  "smp": 1,
+  "firmware": "",
+  "display": "sdl",
+  "audio": "default",
+  "gpu": {
+    "romfile": "ati_rage128pro_136_agp.rom"
+  },
+  "network": {
+    "mode": "user",
+    "mac": "00:05:02:12:34:56"
+  },
+  "ata": [
+    {
+      "kind": "disk",
+      "file": "/Volumes/Macdata/qemu/hd/9.2-G4.img",
+      "format": "raw"
+    },
+    null,
+    null,
+    null
+  ],
+  "usb_storage": [],
+  "prom_env": {
+    "auto_boot": true,
+    "vga_ndrv": false,
+    "boot_device": "",
+    "boot_args": ""
+  },
+  "extra_args": "",
+  "notes": "Mac OS 9.2 record: same shape as the OS X one but -smp 1 -m 512."
+}

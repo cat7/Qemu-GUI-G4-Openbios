@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "name": "Mac OS X 10.4",
+  "system": "macosx",
+  "machine": "mac99",
+  "via": "pmu",
+  "ram_mb": 1024,
+  "smp": 4,
+  "firmware": "",
+  "display": "sdl",
+  "audio": "default",
+  "gpu": {
+    "romfile": "ati_rage128pro_136_agp.rom"
+  },
+  "network": {
+    "mode": "user",
+    "mac": "00:05:02:12:34:56"
+  },
+  "ata": [
+    {
+      "kind": "disk",
+      "file": "/Volumes/Macdata/qemu/hd/10.4.img",
+      "format": "raw"
+    },
+    null,
+    {
+      "kind": "cdrom",
+      "file": "/Users/hsp/Downloads/Chessmaster9000.iso",
+      "format": "raw"
+    },
+    null
+  ],
+  "usb_storage": [],
+  "prom_env": {
+    "auto_boot": true,
+    "vga_ndrv": false,
+    "boot_device": "",
+    "boot_args": ""
+  },
+  "extra_args": "",
+  "notes": "Reproduces the user's mac99 OS X 10.4 reference launch line (2026-09-14)."
+}
