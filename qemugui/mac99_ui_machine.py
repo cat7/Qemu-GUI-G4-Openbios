@@ -1,5 +1,5 @@
 """The mac99 machine editor: Machine, Display, Drives, Network & sound,
-Advanced.
+Shared folder, Advanced.
 
 Same two rules as the g3beige editor (qemugui/ui_machine.py):
 
@@ -17,7 +17,7 @@ from tkinter import ttk, filedialog, messagebox
 
 from . import paths
 from . import mac99_model as model
-from .mac99_model import Machine, AtaDrive, Gpu, Network, PromEnv, UsbStorage
+from .mac99_model import Machine, AtaDrive, Gpu, Network, PromEnv, UsbStorage, Share
 from .mac99_ui_dialogs import show_validation, refresh_native_style, CreateDiskDialog
 
 KIND_LABELS = {"": "Empty", "disk": "Hard disk", "cdrom": "CD"}
@@ -141,6 +141,7 @@ class MachineEditor(tk.Toplevel):
         self._build_display()
         self._build_drives()
         self._build_net_audio()
+        self._build_share()
         self._build_advanced()
 
         bar = ttk.Frame(self)
@@ -317,6 +318,38 @@ class MachineEditor(tk.Toplevel):
         else:
             self.ifname_entry.config(state="disabled")
 
+    def _build_share(self):
+        f = self._tab("Shared folder")
+        f.columnconfigure(1, weight=1)
+        ttk.Label(f, text="Folder:").grid(row=0, column=0, sticky="w", pady=4)
+        self.share_folder_var = tk.StringVar()
+        ttk.Entry(f, textvariable=self.share_folder_var, width=40).grid(
+            row=0, column=1, sticky="ew", pady=4)
+        ttk.Button(f, text="Choose…", command=self._choose_share_folder).grid(
+            row=0, column=2, sticky="w", padx=4, pady=4)
+        ttk.Label(f, text="User:").grid(row=1, column=0, sticky="w", pady=4)
+        self.share_user_var = tk.StringVar(value=Share().user)
+        ttk.Entry(f, textvariable=self.share_user_var, width=20).grid(
+            row=1, column=1, sticky="w", pady=4)
+        ttk.Label(f, text="Password:").grid(row=2, column=0, sticky="w", pady=4)
+        self.share_password_var = tk.StringVar()
+        ttk.Entry(f, textvariable=self.share_password_var, width=20, show="*").grid(
+            row=2, column=1, sticky="w", pady=4)
+        self.share_scope = tk.StringVar(value="guest-only")
+        ttk.Radiobutton(f, text="Guest only", variable=self.share_scope,
+                       value="guest-only").grid(row=3, column=0, columnspan=3, sticky="w",
+                                                pady=(8, 0))
+        ttk.Radiobutton(f, text="All interfaces (needs a password)", variable=self.share_scope,
+                       value="all-interfaces").grid(row=4, column=0, columnspan=3, sticky="w")
+        ttk.Label(f, text="In the Mac: ftp://10.0.2.2/ with the default network setting.",
+                 foreground=GREY).grid(row=5, column=0, columnspan=3, sticky="w", pady=(8, 0))
+
+    def _choose_share_folder(self):
+        start = paths.browse_start_dir(self.share_folder_var.get(), None)
+        d = filedialog.askdirectory(parent=self, initialdir=str(start))
+        if d:
+            self.share_folder_var.set(d)
+
     def _build_advanced(self):
         f = self._tab("Advanced")
         f.columnconfigure(1, weight=1)
@@ -373,6 +406,10 @@ class MachineEditor(tk.Toplevel):
         self.ifname_var.set(m.network.ifname)
         self._net_mode_changed()
         self.audio_var.set(m.audio)
+        self.share_folder_var.set(m.share.folder)
+        self.share_user_var.set(m.share.user)
+        self.share_password_var.set(m.share.password)
+        self.share_scope.set(m.share.scope)
         # inverted: the checkbox asks the opposite question from the field
         self.boot_into_ofw_var.set(not m.prom_env.auto_boot)
         self.no_vga_driver_var.set(not m.prom_env.vga_ndrv)
@@ -401,6 +438,8 @@ class MachineEditor(tk.Toplevel):
         ifname = self.ifname_var.get().strip() if mode in model.NETWORK_MODES_WITH_IFNAME else ""
         m.network = Network(mode, self.mac_var.get().strip(), ifname)
         m.audio = self.audio_var.get()
+        m.share = Share(self.share_folder_var.get().strip(), self.share_user_var.get().strip(),
+                        self.share_password_var.get(), self.share_scope.get())
         m.prom_env = PromEnv(not self.boot_into_ofw_var.get(), not self.no_vga_driver_var.get(),
                              self.boot_device_var.get().strip(), self.boot_args_var.get().strip())
         m.extra_args = self.extra_var.get().strip()

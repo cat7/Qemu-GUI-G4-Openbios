@@ -269,6 +269,47 @@ class NewDiskButton(unittest.TestCase):
 
 
 @unittest.skipUnless(_tk_available(), "no display")
+class ShareTab(unittest.TestCase):
+    """The Shared folder tab: load/collect round trip for Machine.share."""
+
+    def _editor(self, m: Machine):
+        import tkinter as tk
+        from qemugui.mac99_ui_machine import MachineEditor
+        lib = model.Library(self.td.name)
+        root = tk.Tk(); root.withdraw()
+        self.roots.append(root)
+        ed = MachineEditor(root, m, lib, "/q", on_save=lambda *a: None)
+        ed.withdraw()
+        return ed
+
+    def setUp(self):
+        self.td = tempfile.TemporaryDirectory()
+        self.roots = []
+
+    def tearDown(self):
+        for r in self.roots:
+            r.destroy()
+        self.td.cleanup()
+
+    def test_defaults_to_no_shared_folder(self):
+        from qemugui.mac99_model import Share
+        ed = self._editor(Machine(name="t"))
+        self.assertEqual(ed.share_folder_var.get(), "")
+        self.assertEqual(ed.share_scope.get(), "guest-only")
+        self.assertEqual(ed.collect().share, Share())
+
+    def test_loads_and_collects_a_share(self):
+        from qemugui.mac99_model import Share
+        m = Machine(name="t", share=Share("/shared", "mac", "secret", "all-interfaces"))
+        ed = self._editor(m)
+        self.assertEqual(ed.share_folder_var.get(), "/shared")
+        self.assertEqual(ed.share_user_var.get(), "mac")
+        self.assertEqual(ed.share_password_var.get(), "secret")
+        self.assertEqual(ed.share_scope.get(), "all-interfaces")
+        self.assertEqual(ed.collect().share, m.share)
+
+
+@unittest.skipUnless(_tk_available(), "no display")
 class NoSystemChooserOnScreen(unittest.TestCase):
     """New machine asks for a name only -- there is no system-type chooser
     to find or to leave blank (user review, 2026-09-14)."""

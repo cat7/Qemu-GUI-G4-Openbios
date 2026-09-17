@@ -277,6 +277,37 @@ class PromEnv:
                    str(d.get("boot_device", "")), str(d.get("boot_args", "")))
 
 
+SHARE_SCOPES = ("guest-only", "all-interfaces")
+SHARE_DEFAULT_USER = "guest"
+
+
+@dataclass
+class Share:
+    """One host folder, offered to the guest over FTP while it runs -- see
+    mac99_share.py. Ported from the g3beige GUI's own shared folder."""
+    folder: str = ""             # "" = no shared folder
+    user: str = SHARE_DEFAULT_USER
+    password: str = ""
+    scope: str = "guest-only"    # guest-only | all-interfaces
+
+    def to_dict(self) -> dict:
+        return {"folder": self.folder, "user": self.user, "password": self.password,
+                "scope": self.scope}
+
+    @classmethod
+    def from_dict(cls, d: Any) -> "Share":
+        if not isinstance(d, dict):
+            return cls()
+        return cls(str(d.get("folder", "") or ""),
+                   str(d.get("user", SHARE_DEFAULT_USER) or SHARE_DEFAULT_USER),
+                   str(d.get("password", "") or ""),
+                   str(d.get("scope", "guest-only") or "guest-only"))
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.folder.strip())
+
+
 @dataclass
 class Machine:
     name: str = "New machine"
@@ -293,6 +324,7 @@ class Machine:
     ata: list = field(default_factory=lambda: [None, None, None, None])
     usb_storage: list = field(default_factory=list)
     prom_env: PromEnv = field(default_factory=PromEnv)
+    share: Share = field(default_factory=Share)
     extra_args: str = ""
     notes: str = ""
 
@@ -313,6 +345,7 @@ class Machine:
             "ata": [d.to_dict() if d else None for d in self.ata],
             "usb_storage": [u.to_dict() for u in self.usb_storage],
             "prom_env": self.prom_env.to_dict(),
+            "share": self.share.to_dict(),
             "extra_args": self.extra_args,
             "notes": self.notes,
         }
@@ -341,6 +374,7 @@ class Machine:
             ata=ata,
             usb_storage=usb,
             prom_env=PromEnv.from_dict(d.get("prom_env")),
+            share=Share.from_dict(d.get("share")),
             extra_args=str(d.get("extra_args", "")),
             notes=str(d.get("notes", "")),
         )
@@ -476,6 +510,19 @@ def validate(m: Machine, qemu_dir: str | None, platform: str = paths.HOST_PLATFO
                 warnings.append(f"{ata_slot_name(m.boot_slot)} is marked Boot, but "
                                 f"{ata_slot_name(winner)} (lower index, also a {kind_word}) "
                                 "will boot first.")
+
+    share = m.share
+    if share.scope not in SHARE_SCOPES:
+        errors.append(f"'{share.scope}' is not a sharing setting.")
+    if share.enabled:
+        if not Path(share.folder.strip()).expanduser().is_dir():
+            errors.append("The shared folder is not a folder that exists.")
+        if not share.user.strip():
+            errors.append("The shared folder has no user name.")
+        if share.scope == "all-interfaces" and not share.password:
+            errors.append("Sharing on all interfaces needs a password.")
+        if share.scope == "guest-only" and net.mode != "user":
+            warnings.append("Guest only sharing is only reachable with default (slirp).")
 
     if check_files:
         qd = qemu_dir or ""

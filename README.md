@@ -7,12 +7,21 @@ same folder as `qemu-system-ppc` (and `qemu-img`, `pc-bios/`).
 
 ## Requirements
 
-- To run from source: Python 3.11+ with tkinter, no third-party packages.
-- To build a distributable bundle: PyInstaller.
+- To run from source: Python 3.11+ with tkinter, plus `pyftpdlib` for the
+  shared folder (`python -m pip install pyftpdlib`).
+- To build a distributable bundle: PyInstaller, with `pyftpdlib` installed
+  in the same Python.
 
 ## Run from source
 
     python mac99_gui.py
+
+## Shared folder
+
+Each machine can share one host folder over FTP while it runs. With the
+default (slirp) network the Mac reaches it at `ftp://10.0.2.2/` (`:2121`
+when port 21 is taken); with vmnet choose "All interfaces", set a
+password, and use the host's own address.
 
 ## Build on macOS
 

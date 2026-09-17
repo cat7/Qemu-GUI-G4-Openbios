@@ -12,6 +12,7 @@ from tkinter import ttk, messagebox
 
 from . import mac99_command as command
 from . import mac99_model as model
+from . import mac99_share as share
 from . import paths
 from .mac99_model import Machine, Library
 from .paths import Settings
@@ -28,13 +29,15 @@ def qemu_dir() -> str:
 
 
 class RunningMachine:
-    def __init__(self, name: str, proc: subprocess.Popen, log_path: Path, argv: list[str], log_fh):
+    def __init__(self, name: str, proc: subprocess.Popen, log_path: Path, argv: list[str], log_fh,
+                 share_server: share.ShareServer | None = None):
         self.name = name
         self.proc = proc
         self.log_path = log_path
         self.argv = argv
         self.started = time.time()
         self._log_fh = log_fh
+        self.share = share_server
         self.exit_code: int | None = None
 
     @property
@@ -45,6 +48,9 @@ class RunningMachine:
         rc = self.proc.poll()
         if rc is not None and self.exit_code is None:
             self.exit_code = rc
+            if self.share:
+                self.share.stop()
+                self.share = None
             try:
                 self._log_fh.close()
             except OSError:
@@ -58,25 +64,49 @@ class RunningMachine:
 TERMINAL_STATUS = "Started in Terminal"
 
 
-def start_in_terminal(m: Machine, machine_dir: Path) -> Path:
+def start_in_terminal(m: Machine, machine_dir: Path) -> tuple[Path, share.ShareServer | None]:
+    """vmnet needs a root password, and only Terminal can ask for one, so
+    this run cannot be followed; a shared folder stays up until the next
+    start or quit."""
     machine_dir = Path(machine_dir)
     machine_dir.mkdir(parents=True, exist_ok=True)
     launcher, _argv = command.write_launcher(m, qemu_dir(), str(machine_dir))
-    subprocess.Popen(["open", "-a", "Terminal", str(launcher)], cwd=str(machine_dir))
-    return launcher
+    share_server = share.start_share(m) if m.share.enabled else None
+    try:
+        subprocess.Popen(["open", "-a", "Terminal", str(launcher)], cwd=str(machine_dir))
+    except OSError:
+        if share_server:
+            share_server.stop()
+        raise
+    return launcher, share_server
 
 
 def start_machine(m: Machine, machine_dir: Path) -> RunningMachine:
+    """Write the launcher, start the shared folder, then run the launcher
+    with the machine folder as the working directory, keeping everything
+    it prints in last-run.log."""
     machine_dir = Path(machine_dir)
     machine_dir.mkdir(parents=True, exist_ok=True)
     _launcher, argv = command.write_launcher(m, qemu_dir(), str(machine_dir))
     log_path = machine_dir / LOG_NAME
-    log_fh = open(log_path, "w", encoding="utf-8")
-    log_fh.write("# " + " ".join(argv) + "\n")
-    log_fh.flush()
-    proc = subprocess.Popen(argv, cwd=str(machine_dir), stdout=log_fh, stderr=subprocess.STDOUT,
-                            stdin=subprocess.DEVNULL)
-    return RunningMachine(m.name, proc, log_path, argv, log_fh)
+    log_path.write_text("# " + " ".join(argv) + "\n", encoding="utf-8")
+    log_fh = open(log_path, "a", encoding="utf-8")
+    share_server = None
+    if m.share.enabled:
+        try:
+            share_server = share.start_share(m, log_path)
+        except share.ShareError:
+            log_fh.close()
+            raise
+    try:
+        proc = subprocess.Popen(argv, cwd=str(machine_dir), stdout=log_fh, stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL)
+    except OSError:
+        if share_server:
+            share_server.stop()
+        log_fh.close()
+        raise
+    return RunningMachine(m.name, proc, log_path, argv, log_fh, share_server)
 
 
 class MainWindow(tk.Tk):
@@ -90,6 +120,7 @@ class MainWindow(tk.Tk):
         self.running: dict[str, RunningMachine] = {}
         self.finished: dict[str, RunningMachine] = {}
         self.terminal_started: dict[str, float] = {}
+        self.terminal_shares: dict[str, share.ShareServer] = {}
         self.title(APP_TITLE)
         self.geometry("1100x680")
         self.minsize(880, 520)
@@ -256,17 +287,28 @@ class MainWindow(tk.Tk):
         if not r:
             if name in self.terminal_started:
                 when = time.strftime("%H:%M", time.localtime(self.terminal_started[name]))
-                self.run_status.config(text=f"{TERMINAL_STATUS} ({when})")
+                self.run_status.config(text=f"{TERMINAL_STATUS} ({when})"
+                                       + self._share_line(name, self.terminal_shares.get(name)))
             else:
                 self.run_status.config(text="Not running")
             return
         if r.exit_code is None:
-            self.run_status.config(text=f"Running — {self._duration(r.uptime())}")
+            self.run_status.config(text=f"Running — {self._duration(r.uptime())}"
+                                   + self._share_line(name, r.share))
         elif r.exit_code == 0:
             self.run_status.config(text=f"Stopped after {self._duration(r.uptime())}")
         else:
             self.run_status.config(
                 text=f"Stopped after {self._duration(r.uptime())} — code {r.exit_code}")
+
+    def _share_line(self, name: str, s: share.ShareServer | None) -> str:
+        if not s:
+            return ""
+        try:
+            m = self.library.load(name)
+        except (OSError, ValueError, KeyError, TypeError):
+            return ""
+        return f"\nShared folder: {s.url_for(m.network.mode, m.network.ifname)}"
 
     @staticmethod
     def _duration(seconds: float) -> str:
@@ -309,7 +351,13 @@ class MainWindow(tk.Tk):
         self.library.delete(name)
         self.finished.pop(name, None)
         self.terminal_started.pop(name, None)
+        self._stop_terminal_share(name)
         self.refresh_list()
+
+    def _stop_terminal_share(self, name: str):
+        s = self.terminal_shares.pop(name, None)
+        if s:
+            s.stop()
 
     def edit_machine(self):
         m = self.selected_machine()
@@ -381,17 +429,26 @@ class MainWindow(tk.Tk):
             if paths.HOST_PLATFORM != "darwin":
                 messagebox.showerror("Start", "This network setting only works on a Mac.")
                 return None
+            self._stop_terminal_share(m.name)
             try:
-                start_in_terminal(m, self.library.folder(m.name))
+                _launcher, share_server = start_in_terminal(m, self.library.folder(m.name))
+            except share.ShareError as e:
+                messagebox.showerror("Start", f"The shared folder could not be started.\n\n{e}")
+                return None
             except OSError as e:
                 messagebox.showerror("Start", f"A Terminal window could not be opened.\n\n{e}")
                 return None
+            if share_server:
+                self.terminal_shares[m.name] = share_server
             self.terminal_started[m.name] = time.time()
             self.finished.pop(m.name, None)
             self.refresh_list(select=m.name)
             return None
         try:
             r = start_machine(m, self.library.folder(m.name))
+        except share.ShareError as e:
+            messagebox.showerror("Start", f"The shared folder could not be started.\n\n{e}")
+            return None
         except OSError as e:
             messagebox.showerror("Start", f"It could not be started.\n\n{e}")
             return None
@@ -428,4 +485,9 @@ class MainWindow(tk.Tk):
             names = ", ".join(self.running)
             if not messagebox.askyesno("Quit", f"Still running: {names} — quit anyway?"):
                 return
+        for name in list(self.terminal_shares):
+            self._stop_terminal_share(name)
+        for r in self.running.values():
+            if r.share:
+                r.share.stop()
         self.destroy()
