@@ -10,12 +10,17 @@ Order follows the user's own reference launcher (verbatim, given
 2026-09-14): ``-L pc-bios -M mac99,via=... -smp N -display D -m M -boot c
 [-vga none -global adb-mouse... ] -audiodev ... -global screamer.audiodev=snd
 [-device ati-rage128-pro,romfile=...] -nic ... -drive ... -prom-env ...``.
+``-boot c`` there is the disk-boot default (``Machine.boot_slot`` unset);
+``build_argv`` emits ``-boot d`` instead when the marked slot
+(``model.resolved_boot_kind``) is a CD -- see ``mac99_model.py``'s module
+docstring for what that character actually selects.
 """
 
 from __future__ import annotations
 
 from . import paths
 from .paths import qopt, split_extra_args, group_options, bat_quote, SUDO_KEEPALIVE  # re-exported
+from . import mac99_model as model
 from .mac99_model import Machine
 
 HEADER_NOTE = "Written by Qemu-system-ppc Mac99 openbios GUI. Do not edit."
@@ -86,7 +91,9 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
     else:
         argv += ["-display", m.display]
     argv += ["-m", str(int(m.ram_mb))]
-    argv += ["-boot", "c"]
+    # 'c' tries the "hd" alias, anything else (here 'd') the "cd" one --
+    # see mac99_model.py's module docstring for the alias mechanism.
+    argv += ["-boot", "d" if model.resolved_boot_kind(m) == "cdrom" else "c"]
 
     if m.gpu:
         argv += ["-vga", "none"]

@@ -17,8 +17,8 @@ from tkinter import ttk, filedialog, messagebox
 
 from . import paths
 from . import mac99_model as model
-from .mac99_model import Machine, AtaDrive, Gpu, Network, PromEnv
-from .mac99_ui_dialogs import show_validation
+from .mac99_model import Machine, AtaDrive, Gpu, Network, PromEnv, UsbStorage
+from .mac99_ui_dialogs import show_validation, refresh_native_style, CreateDiskDialog
 
 KIND_LABELS = {"": "Empty", "disk": "Hard disk", "cdrom": "CD"}
 KIND_BY_LABEL = {v: k for k, v in KIND_LABELS.items()}
@@ -63,13 +63,17 @@ class FilePicker:
 
 
 class AtaRow:
-    """One IDE position: what is in it, which file it is."""
+    """One IDE position: what is in it, which file it is, and whether it is
+    the marked boot drive ("Boot" -- mutually exclusive across rows, wired
+    by whoever creates them via ``on_boot``; see MachineEditor)."""
 
-    def __init__(self, master, row: int, label: str, fallback=None):
+    def __init__(self, master, row: int, label: str, fallback=None, on_boot=None):
         self.fallback = fallback
+        self.on_boot = on_boot
         self.kind = tk.StringVar(value=KIND_LABELS[""])
         self.file = tk.StringVar()
         self.format = tk.StringVar(value="raw")
+        self.boot = tk.BooleanVar(value=False)
         ttk.Label(master, text=label).grid(row=row, column=0, sticky="w", padx=(0, 4), pady=1)
         cb = ttk.Combobox(master, textvariable=self.kind, values=list(KIND_LABELS.values()),
                           state="readonly", width=9)
@@ -80,6 +84,8 @@ class AtaRow:
         self.file.trace_add("write", lambda *_a: self._infer_kind())
         ttk.Combobox(master, textvariable=self.format, values=model.FORMATS, state="readonly",
                     width=6).grid(row=row, column=3, padx=2)
+        ttk.Checkbutton(master, text="Boot", variable=self.boot,
+                       command=self._boot_toggled).grid(row=row, column=4, padx=(6, 0))
 
     def _infer_kind(self):
         if KIND_BY_LABEL[self.kind.get()] or not self.file.get().strip():
@@ -91,6 +97,11 @@ class AtaRow:
         if not KIND_BY_LABEL[self.kind.get()]:
             self.file.set("")
             self.format.set("raw")
+            self.boot.set(False)
+
+    def _boot_toggled(self):
+        if self.boot.get() and self.on_boot:
+            self.on_boot(self)
 
     def set_ata(self, d: AtaDrive | None):
         self.kind.set(KIND_LABELS[d.kind if d else ""])
@@ -113,6 +124,7 @@ class MachineEditor(tk.Toplevel):
     def __init__(self, parent, machine: Machine, library: model.Library, qemu_dir: str, on_save,
                 is_new: bool = False):
         super().__init__(parent)
+        refresh_native_style(self)
         self.machine = machine.copy()
         self.old_name = machine.name
         self.is_new = is_new
@@ -241,10 +253,31 @@ class MachineEditor(tk.Toplevel):
         ata = ttk.Frame(f)
         ata.grid(row=r, column=0, sticky="ew")
         ata.columnconfigure(2, weight=1)
-        for c, h in enumerate(("Position", "", "", "Format")):
+        for c, h in enumerate(("Position", "", "", "Format", "")):
             ttk.Label(ata, text=h, foreground=GREY).grid(row=0, column=c, sticky="w", padx=4)
-        self.ata_rows = [AtaRow(ata, 1 + i, model.ata_slot_name(i), fallback=self.machine_folder)
+        self.ata_rows = [AtaRow(ata, 1 + i, model.ata_slot_name(i), fallback=self.machine_folder,
+                                on_boot=self._boot_row_toggled)
                         for i in range(len(model.ATA_SLOTS))]
+        r += 1
+        self.new_disk_button = None
+        if paths.qemu_img_binary().is_file():
+            self.new_disk_button = ttk.Button(f, text="New disk…", command=self._new_disk)
+            self.new_disk_button.grid(row=r, column=0, sticky="w", pady=(8, 0))
+
+    def _boot_row_toggled(self, row: AtaRow):
+        for other in self.ata_rows:
+            if other is not row:
+                other.boot.set(False)
+
+    def _new_disk(self):
+        dlg = CreateDiskDialog(self, self.collect(), self.machine_folder())
+        if not dlg.result:
+            return
+        path, fmt, place = dlg.result
+        if place and place[0] == "ata":
+            self.ata_rows[place[1]].set_ata(AtaDrive(kind="disk", file=path, format=fmt))
+        elif place and place[0] == "usb":
+            self.machine.usb_storage.append(UsbStorage(path, fmt))
 
     def _build_net_audio(self):
         f = self._tab("Network & sound")
@@ -333,6 +366,7 @@ class MachineEditor(tk.Toplevel):
             self.gpu_rom_var.set("")
         for i, row in enumerate(self.ata_rows):
             row.set_ata(m.ata[i] if i < len(m.ata) else None)
+            row.boot.set(i == m.boot_slot)
         self.net_mode_cb.config(values=model.network_labels_for_host(current=m.network.mode))
         self.net_mode.set(model.network_mode_label(m.network.mode))
         self.mac_var.set(m.network.mac)
@@ -362,6 +396,7 @@ class MachineEditor(tk.Toplevel):
         m.vnc = self.vnc_var.get().strip() if self.vnc_on.get() else ""
         m.gpu = Gpu(self.gpu_rom_var.get().strip() or None) if self.gpu_on.get() else None
         m.ata = [row.get_ata() for row in self.ata_rows]
+        m.boot_slot = next((i for i, row in enumerate(self.ata_rows) if row.boot.get()), None)
         mode = model.network_mode_by_label(self.net_mode.get())
         ifname = self.ifname_var.get().strip() if mode in model.NETWORK_MODES_WITH_IFNAME else ""
         m.network = Network(mode, self.mac_var.get().strip(), ifname)

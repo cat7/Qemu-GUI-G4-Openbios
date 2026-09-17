@@ -20,7 +20,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from qemugui import mac99_model as model  # noqa: E402
-from qemugui.mac99_model import Machine, PromEnv, Gpu  # noqa: E402
+from qemugui import paths  # noqa: E402
+from qemugui.mac99_model import Machine, PromEnv, Gpu, AtaDrive, UsbStorage  # noqa: E402
 
 
 def _tk_available():
@@ -119,6 +120,152 @@ class CheckboxPolarity(unittest.TestCase):
         ed._gpu_changed()
         ed.no_vga_driver_var.set(False)          # a person overrides it
         self.assertTrue(ed.collect().prom_env.vga_ndrv)
+
+
+@unittest.skipUnless(_tk_available(), "no display")
+class BootCheckbox(unittest.TestCase):
+    """The Drives tab's per-row "Boot" checkbox, mutually exclusive across
+    the four ATA rows, which sets ``Machine.boot_slot`` (see
+    mac99_model.py's module docstring)."""
+
+    def _editor(self, m: Machine):
+        import tkinter as tk
+        from qemugui.mac99_ui_machine import MachineEditor
+        lib = model.Library(self.td.name)
+        root = tk.Tk(); root.withdraw()
+        self.roots.append(root)
+        ed = MachineEditor(root, m, lib, "/q", on_save=lambda *a: None)
+        ed.withdraw()
+        return ed
+
+    def setUp(self):
+        self.td = tempfile.TemporaryDirectory()
+        self.roots = []
+
+    def tearDown(self):
+        for r in self.roots:
+            r.destroy()
+        self.td.cleanup()
+
+    def test_defaults_to_nothing_checked(self):
+        m = Machine(name="t")
+        ed = self._editor(m)
+        self.assertFalse(any(row.boot.get() for row in ed.ata_rows))
+        self.assertIsNone(ed.collect().boot_slot)
+
+    def test_loads_the_marked_slot(self):
+        m = Machine(name="t", boot_slot=2,
+                    ata=[AtaDrive("disk", "/a.img"), None, AtaDrive("cdrom", "/c.iso"), None])
+        ed = self._editor(m)
+        self.assertEqual([row.boot.get() for row in ed.ata_rows], [False, False, True, False])
+        self.assertEqual(ed.collect().boot_slot, 2)
+
+    def test_checking_one_row_unchecks_the_others(self):
+        m = Machine(name="t", ata=[AtaDrive("disk", "/a.img"), AtaDrive("disk", "/b.img"), None, None])
+        ed = self._editor(m)
+        ed.ata_rows[0].boot.set(True)
+        ed.ata_rows[0]._boot_toggled()
+        self.assertEqual(ed.collect().boot_slot, 0)
+        ed.ata_rows[1].boot.set(True)
+        ed.ata_rows[1]._boot_toggled()
+        self.assertFalse(ed.ata_rows[0].boot.get())
+        self.assertEqual(ed.collect().boot_slot, 1)
+
+    def test_emptying_a_checked_slot_clears_boot(self):
+        m = Machine(name="t", boot_slot=0, ata=[AtaDrive("disk", "/a.img"), None, None, None])
+        ed = self._editor(m)
+        self.assertTrue(ed.ata_rows[0].boot.get())
+        ed.ata_rows[0].kind.set("Empty")
+        ed.ata_rows[0]._kind_changed()
+        self.assertFalse(ed.ata_rows[0].boot.get())
+        self.assertIsNone(ed.collect().boot_slot)
+
+
+@unittest.skipUnless(_tk_available(), "no display")
+class NewDiskButton(unittest.TestCase):
+    """The Drives tab's "New disk…" button, offered only when qemu-img
+    sits next to the program (paths.qemu_img_binary), and its wiring of
+    CreateDiskDialog's result back into the editor."""
+
+    def _editor(self, m: Machine):
+        import tkinter as tk
+        from qemugui.mac99_ui_machine import MachineEditor
+        lib = model.Library(self.td.name)
+        root = tk.Tk(); root.withdraw()
+        self.roots.append(root)
+        ed = MachineEditor(root, m, lib, "/q", on_save=lambda *a: None)
+        ed.withdraw()
+        return ed
+
+    def setUp(self):
+        self.td = tempfile.TemporaryDirectory()
+        self.install_dir = tempfile.TemporaryDirectory()
+        self.roots = []
+
+    def tearDown(self):
+        for r in self.roots:
+            r.destroy()
+        self.td.cleanup()
+        self.install_dir.cleanup()
+        paths.use_install_dir(None)
+
+    def test_absent_without_qemu_img(self):
+        paths.use_install_dir(self.install_dir.name)
+        ed = self._editor(Machine(name="t"))
+        self.assertIsNone(ed.new_disk_button)
+
+    def test_present_with_qemu_img(self):
+        (Path(self.install_dir.name) / paths.qemu_img_name()).write_text("")
+        paths.use_install_dir(self.install_dir.name)
+        ed = self._editor(Machine(name="t"))
+        self.assertIsNotNone(ed.new_disk_button)
+
+    def test_places_new_disk_in_the_chosen_ata_slot(self):
+        import qemugui.mac99_ui_machine as ui_machine
+        ed = self._editor(Machine(name="t"))
+
+        class FakeDialog:
+            def __init__(self, *_a, **_k):
+                self.result = ("/new/disk.img", "raw", ("ata", 1))
+
+        orig, ui_machine.CreateDiskDialog = ui_machine.CreateDiskDialog, FakeDialog
+        try:
+            ed._new_disk()
+        finally:
+            ui_machine.CreateDiskDialog = orig
+        self.assertEqual(ed.ata_rows[1].file.get(), "/new/disk.img")
+        self.assertEqual(ed.ata_rows[1].kind.get(), "Hard disk")
+
+    def test_places_new_disk_as_usb_storage(self):
+        import qemugui.mac99_ui_machine as ui_machine
+        ed = self._editor(Machine(name="t"))
+
+        class FakeDialog:
+            def __init__(self, *_a, **_k):
+                self.result = ("/new/stick.img", "raw", ("usb", None))
+
+        orig, ui_machine.CreateDiskDialog = ui_machine.CreateDiskDialog, FakeDialog
+        try:
+            ed._new_disk()
+        finally:
+            ui_machine.CreateDiskDialog = orig
+        self.assertEqual(ed.collect().usb_storage, [UsbStorage("/new/stick.img", "raw")])
+
+    def test_cancelled_dialog_changes_nothing(self):
+        import qemugui.mac99_ui_machine as ui_machine
+        ed = self._editor(Machine(name="t", ata=[AtaDrive("disk", "/a.img"), None, None, None]))
+
+        class FakeDialog:
+            def __init__(self, *_a, **_k):
+                self.result = None
+
+        orig, ui_machine.CreateDiskDialog = ui_machine.CreateDiskDialog, FakeDialog
+        try:
+            ed._new_disk()
+        finally:
+            ui_machine.CreateDiskDialog = orig
+        self.assertEqual(ed.ata_rows[0].file.get(), "/a.img")
+        self.assertEqual(ed.collect().usb_storage, [])
 
 
 @unittest.skipUnless(_tk_available(), "no display")

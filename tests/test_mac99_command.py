@@ -220,6 +220,56 @@ class Options(unittest.TestCase):
                                   "file=/c.iso,format=raw,media=cdrom,index=2",
                                   "file=/d.iso,format=raw,media=cdrom,index=3"])
 
+    def test_no_boot_slot_marked_emits_boot_c(self):
+        m = self.base()
+        self.assertIsNone(m.boot_slot)
+        argv = command.build_argv(m, "", "/m", "darwin")
+        self.assertEqual(argv[argv.index("-boot") + 1], "c")
+
+    def test_boot_slot_on_a_cd_emits_boot_d(self):
+        m = self.base()
+        m.boot_slot = 2  # the fixture's cdrom
+        argv = command.build_argv(m, "", "/m", "darwin")
+        self.assertEqual(argv[argv.index("-boot") + 1], "d")
+
+    def test_boot_slot_on_a_disk_emits_boot_c(self):
+        m = self.base()
+        m.boot_slot = 0  # the fixture's disk
+        argv = command.build_argv(m, "", "/m", "darwin")
+        self.assertEqual(argv[argv.index("-boot") + 1], "c")
+
+    def test_boot_slot_out_of_range_falls_back_to_c(self):
+        m = self.base()
+        m.boot_slot = 9
+        argv = command.build_argv(m, "", "/m", "darwin")
+        self.assertEqual(argv[argv.index("-boot") + 1], "c")
+
+    def test_boot_slot_on_an_empty_slot_warns(self):
+        m = self.base()
+        m.boot_slot = 1  # empty in the fixture
+        _errors, warnings = model.validate(m, None, "darwin", check_files=False)
+        self.assertTrue(any("is marked Boot but is empty" in w for w in warnings))
+
+    def test_boot_slot_not_the_lowest_of_its_kind_warns(self):
+        m = self.base()
+        m.ata = [AtaDrive("disk", "/a.img"), AtaDrive("disk", "/b.img"), None, None]
+        m.boot_slot = 1
+        _errors, warnings = model.validate(m, None, "darwin", check_files=False)
+        self.assertTrue(any("is marked Boot, but IDE 0 Master" in w for w in warnings))
+
+    def test_boot_slot_already_the_lowest_of_its_kind_is_quiet(self):
+        m = self.base()
+        m.ata = [AtaDrive("disk", "/a.img"), AtaDrive("disk", "/b.img"), None, None]
+        m.boot_slot = 0
+        _errors, warnings = model.validate(m, None, "darwin", check_files=False)
+        self.assertFalse(any("marked Boot" in w for w in warnings))
+
+    def test_boot_slot_out_of_range_is_an_error(self):
+        m = self.base()
+        m.boot_slot = 9
+        errors, _warnings = model.validate(m, None, "darwin", check_files=False)
+        self.assertTrue(any("not a real drive position" in e for e in errors))
+
     def test_usb_storage(self):
         """Candidate only: not verified on any guest here, and there is no
         editor UI to add one (user review, 2026-09-14). Kept and tested at
@@ -384,6 +434,7 @@ class JsonRoundTrip(unittest.TestCase):
                     display="cocoa", vnc=":2", audio="none",
                     gpu=Gpu("card.rom"),
                     network=Network("user", "00:11:22:33:44:55"),
+                    boot_slot=2,
                     ata=[AtaDrive("disk", "/a.img", "qcow2"), None, AtaDrive("cdrom", "/c.iso"), None],
                     usb_storage=[UsbStorage("/mem.img", "raw")],
                     prom_env=PromEnv(False, True, "cd:,\\:tbxi", "-v"),
@@ -415,7 +466,7 @@ class NothingIsChosenForYou(unittest.TestCase):
         and whoever wants more CPUs turns it up themselves (user review,
         2026-09-14)."""
         m = model.new_machine("t")
-        self.assertEqual((m.smp, m.via, m.ram_mb), (1, "pmu", 512))
+        self.assertEqual((m.smp, m.via, m.ram_mb, m.boot_slot), (1, "pmu", 512, None))
 
     def test_there_is_no_system_type_left(self):
         self.assertFalse(hasattr(Machine(), "system"))

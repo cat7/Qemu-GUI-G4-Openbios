@@ -47,6 +47,34 @@ Ground truth (verified in ``qemu-ppc-smp``, branch ``smp-audio-usb``, HEAD
   ``via=cuda`` or ``via=pmu-adb`` (``has_adb`` in mac_newworld.c); under
   ``via=pmu`` no ADB device is ever created and the property has nothing to
   attach to.
+* ``-boot c`` vs ``-boot d`` picks which OpenFirmware ALIAS OpenBIOS tries,
+  not a literal drive index. ``mac_newworld.c:298-314`` folds ``-boot``'s
+  order string down to a single char (the first one in ``c``..``f``) and
+  hands it to the guest as ``FW_CFG_BOOT_DEVICE``; OpenBIOS
+  (``roms/openbios/arch/ppc/qemu/init.c:1243-1264``) only consults that
+  byte when its own ``boot-device`` variable is still the default placeholder
+  string ``"disk"`` -- an explicit ``-prom-env boot-device=...`` (this
+  GUI's Advanced tab) overrides it outright. When it does apply, 'c' means
+  the "hd" alias, anything else (default) means the "cd" alias. Those
+  aliases are set by IDE probing, FIRST MATCH WINS
+  (``roms/openbios/drivers/ide.c:1312-1489``, ``set_hd_alias``/
+  ``set_cd_alias`` both bail if the alias already exists): the probe walks
+  channel 0 then 1, master then slave -- i.e. exactly this GUI's ATA index
+  order 0..3 -- so "hd" is the lowest-index drive of kind disk and "cd" is
+  the lowest-index drive of kind cdrom, independent of each other. This GUI
+  used to hardcode ``-boot c`` always, which meant a CD could never be the
+  automatic boot target no matter where it sat.
+
+  ``Machine.boot_slot`` (an ATA index, or ``None``) names the drive the
+  Drives tab's "Boot" checkbox marks. Because of the alias rule above,
+  checking it does NOT itself move anything -- it only decides ``-boot
+  c``/``-boot d`` from that slot's own kind (``resolved_boot_kind``,
+  falling back to "disk" when unset, empty, or out of range, which is the
+  pre-``boot_slot`` default behaviour). Whether the marked drive is
+  actually the one OpenBIOS boots still depends on it being the lowest
+  index of its kind; ``validate()`` warns, it does not renumber anything
+  -- slot position stays exactly what the person set, same as every other
+  field on this machine.
 """
 
 from __future__ import annotations
@@ -85,6 +113,28 @@ FORMATS = ("raw", "qcow2")
 
 def ata_slot_name(i: int) -> str:
     return ATA_SLOTS[i]
+
+
+def resolved_boot_kind(m: Machine) -> str:
+    """'cdrom' if ``boot_slot`` names a populated CD slot, else 'disk' --
+    the pre-``boot_slot`` default, and what an unset, empty, or
+    out-of-range slot falls back to. Drives ``-boot c`` vs ``-boot d``;
+    does not say WHICH drive of that kind actually boots -- see the module
+    docstring."""
+    i = m.boot_slot
+    if i is not None and 0 <= i < len(m.ata) and m.ata[i] and m.ata[i].file:
+        return m.ata[i].kind if m.ata[i].kind in DRIVE_KINDS else "disk"
+    return "disk"
+
+
+def lowest_slot_of_kind(m: Machine, kind: str) -> int | None:
+    """The ATA index OpenBIOS will actually alias for *kind* -- the first
+    populated slot of that kind, in probe order (see the module
+    docstring). None if there is no such drive."""
+    for i, d in enumerate(m.ata):
+        if d and d.file and d.kind == kind:
+            return i
+    return None
 
 
 AUDIO_MODES = ("default", "sdl", "none")
@@ -239,6 +289,7 @@ class Machine:
     audio: str = "default"
     gpu: Gpu | None = None
     network: Network = field(default_factory=Network)
+    boot_slot: int | None = None   # index into ata, or None -- see resolved_boot_kind
     ata: list = field(default_factory=lambda: [None, None, None, None])
     usb_storage: list = field(default_factory=list)
     prom_env: PromEnv = field(default_factory=PromEnv)
@@ -258,6 +309,7 @@ class Machine:
             "audio": self.audio,
             "gpu": self.gpu.to_dict() if self.gpu else None,
             "network": self.network.to_dict(),
+            "boot_slot": self.boot_slot,
             "ata": [d.to_dict() if d else None for d in self.ata],
             "usb_storage": [u.to_dict() for u in self.usb_storage],
             "prom_env": self.prom_env.to_dict(),
@@ -272,6 +324,8 @@ class Machine:
         while len(ata) < 4:
             ata.append(None)
         usb = [u for u in (UsbStorage.from_dict(x) for x in d.get("usb_storage") or []) if u]
+        boot_slot = d.get("boot_slot")
+        boot_slot = int(boot_slot) if isinstance(boot_slot, int) else None
         return cls(
             name=str(d.get("name", "New machine")),
             machine=str(d.get("machine", "mac99")),
@@ -283,6 +337,7 @@ class Machine:
             audio=str(d.get("audio", "default")),
             gpu=Gpu.from_dict(d.get("gpu")),
             network=Network.from_dict(d.get("network")),
+            boot_slot=boot_slot,
             ata=ata,
             usb_storage=usb,
             prom_env=PromEnv.from_dict(d.get("prom_env")),
@@ -394,6 +449,9 @@ def validate(m: Machine, qemu_dir: str | None, platform: str = paths.HOST_PLATFO
             warnings.append("This network setting only works on "
                             f"{'a Mac' if net.platform == 'darwin' else 'Windows'}.")
 
+    if m.boot_slot is not None and not (0 <= m.boot_slot < len(m.ata)):
+        errors.append("The marked boot drive is not a real drive position.")
+
     if len(m.ata) != 4:
         errors.append("There are not four drive positions.")
     cd_in_wrong_place = False
@@ -406,6 +464,18 @@ def validate(m: Machine, qemu_dir: str | None, platform: str = paths.HOST_PLATFO
             cd_in_wrong_place = True
     if cd_in_wrong_place and (m.ata[ATA_CD_SLOT] is None or not m.ata[ATA_CD_SLOT].file):
         warnings.append(f"The CD is not in {ata_slot_name(ATA_CD_SLOT)}.")
+
+    if m.boot_slot is not None and 0 <= m.boot_slot < len(m.ata):
+        marked = m.ata[m.boot_slot]
+        if marked is None or not marked.file:
+            warnings.append(f"{ata_slot_name(m.boot_slot)} is marked Boot but is empty.")
+        elif marked.kind in DRIVE_KINDS:
+            winner = lowest_slot_of_kind(m, marked.kind)
+            if winner is not None and winner != m.boot_slot:
+                kind_word = "CD" if marked.kind == "cdrom" else "hard disk"
+                warnings.append(f"{ata_slot_name(m.boot_slot)} is marked Boot, but "
+                                f"{ata_slot_name(winner)} (lower index, also a {kind_word}) "
+                                "will boot first.")
 
     if check_files:
         qd = qemu_dir or ""
