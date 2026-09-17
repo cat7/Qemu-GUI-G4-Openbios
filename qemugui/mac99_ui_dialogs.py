@@ -24,6 +24,19 @@ APP_NAME = "Qemu-system-ppc Mac99 openbios GUI"
 DISK_SIZES = ("1", "2", "4", "8", "10", "20")
 
 
+def refresh_native_style(widget: tk.Misc) -> None:
+    """Re-select the running ttk theme on *widget*'s interpreter.
+
+    Native aqua only -- no theme is ever chosen here, this reselects
+    whichever one is already running. Tk's own theme-change handler is what
+    actually paints frame/label backgrounds; a window built before that
+    handler has run once keeps Tk's pre-theme default (white) instead. Call
+    once per Tk interpreter (the root, and any Toplevel built on a fresh
+    Tcl interpreter such as a headless test)."""
+    style = ttk.Style(widget)
+    style.theme_use(style.theme_use())
+
+
 def show_validation(parent, errors: list[str], warnings: list[str]) -> bool:
     """Show what is wrong, or worth knowing. True if saving may go ahead."""
     if errors:
@@ -103,6 +116,7 @@ class CreateDiskDialog(simpledialog.Dialog):
         super().__init__(parent, "New hard disk")
 
     def body(self, master):
+        refresh_native_style(self)
         r = 0
         ttk.Label(master, text="Name:").grid(row=r, column=0, sticky="w", padx=4, pady=3)
         self.name_var = tk.StringVar(value="hard disk")

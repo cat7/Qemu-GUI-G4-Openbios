@@ -15,7 +15,8 @@ from . import mac99_model as model
 from . import paths
 from .mac99_model import Machine, Library
 from .paths import Settings
-from .mac99_ui_dialogs import ask_name, confirm_delete, confirm_reset_saved_settings, open_folder
+from .mac99_ui_dialogs import (ask_name, confirm_delete, confirm_reset_saved_settings, open_folder,
+                               refresh_native_style)
 from .mac99_ui_machine import MachineEditor
 
 APP_TITLE = "Qemu-system-ppc Mac99 openbios GUI"
@@ -81,6 +82,7 @@ def start_machine(m: Machine, machine_dir: Path) -> RunningMachine:
 class MainWindow(tk.Tk):
     def __init__(self, settings: Settings, settings_path: Path | None = None):
         super().__init__()
+        refresh_native_style(self)
         self.settings = settings
         self.settings_path = settings_path or paths.settings_path()
         self.library = Library()
