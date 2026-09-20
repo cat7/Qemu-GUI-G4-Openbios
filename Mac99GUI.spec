@@ -70,5 +70,6 @@ app = BUNDLE(
         'NSHighResolutionCapable': True,
         'LSMinimumSystemVersion': '10.13',
         'LSApplicationCategoryType': 'public.app-category.utilities',
+        'NSMicrophoneUsageDescription': 'The emulated machine uses the microphone as its audio input.',
     },
 )
