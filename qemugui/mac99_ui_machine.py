@@ -370,23 +370,20 @@ class MachineEditor(tk.Toplevel):
                                 "ATI Rage128 Pro)",
                        variable=self.no_vga_driver_var).grid(
             row=2, column=0, columnspan=2, sticky="w")
-        ttk.Label(f, text="Rebuilt every start; a Restart from inside the Mac keeps its "
-                          "own choices instead.", foreground=GREY).grid(
-            row=3, column=0, columnspan=2, sticky="w")
-        ttk.Label(f, text="boot-device:").grid(row=4, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(f, text="boot-device:").grid(row=3, column=0, sticky="w", pady=(6, 0))
         self.boot_device_var = tk.StringVar()
         ttk.Entry(f, textvariable=self.boot_device_var, width=30).grid(
-            row=4, column=1, sticky="w", pady=(6, 0))
-        ttk.Label(f, text="boot-args:").grid(row=5, column=0, sticky="w", pady=(6, 0))
+            row=3, column=1, sticky="w", pady=(6, 0))
+        ttk.Label(f, text="boot-args:").grid(row=4, column=0, sticky="w", pady=(6, 0))
         self.boot_args_var = tk.StringVar()
         ttk.Entry(f, textvariable=self.boot_args_var, width=30).grid(
-            row=5, column=1, sticky="w", pady=(6, 0))
-        ttk.Separator(f).grid(row=6, column=0, columnspan=3, sticky="ew", pady=10)
+            row=4, column=1, sticky="w", pady=(6, 0))
+        ttk.Separator(f).grid(row=5, column=0, columnspan=3, sticky="ew", pady=10)
         ttk.Label(f, text="Additional command line arguments", font=("", 0, "bold")).grid(
-            row=7, column=0, columnspan=3, sticky="w", pady=(0, 4))
+            row=6, column=0, columnspan=3, sticky="w", pady=(0, 4))
         self.extra_var = tk.StringVar()
         ttk.Entry(f, textvariable=self.extra_var, width=70).grid(
-            row=8, column=0, columnspan=3, sticky="ew")
+            row=7, column=0, columnspan=3, sticky="ew")
 
     def load(self, m: Machine):
         self.name_var.set(m.name)
