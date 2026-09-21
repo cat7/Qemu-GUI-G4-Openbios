@@ -104,7 +104,8 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
     argv += ["-audiodev", f"{audio},id=snd", "-global", "screamer.audiodev=snd"]
     extra = split_extra_args(m.extra_args, platform)
     if m.usb_audio and not any(t.split(",")[0] == "usb-audio" for t in extra):
-        argv += ["-device", "usb-audio,audiodev=snd"]
+        # Own backend: a shared one is pinned at zero by the Screamer's idle voice.
+        argv += ["-audiodev", f"{audio},id=usb", "-device", "usb-audio,audiodev=usb"]
 
     if m.gpu:
         parts = ["ati-rage128-pro"]

@@ -475,14 +475,23 @@ class RtcBase(unittest.TestCase):
                       command.launcher_text(m, r"C:\q", r"C:\m", "win32").split("\r\n"))
 
 
-USB_AUDIO = ["-device", "usb-audio,audiodev=snd"]
+USB_AUDIO = ["-device", "usb-audio,audiodev=usb"]
+SCREAMER = ["-global", "screamer.audiodev=snd"]
 
 
 def pairs(argv: list[str]) -> list[list[str]]:
     return command.group_options(argv)
 
 
+def audiodevs(argv: list[str]) -> list[str]:
+    return [g[1] for g in pairs(argv) if g[0] == "-audiodev"]
+
+
 class UsbAudio(unittest.TestCase):
+    """The USB device gets its own backend: on a shared one QEMU's mixer
+    advances only as far as the least-advanced voice, and the guest keeps
+    the Screamer's voice open but silent, so the USB device is inaudible
+    (user-verified, 2026-09-21)."""
 
     def base(self) -> Machine:
         m = load_fixture("mac99-osx.json")
@@ -493,26 +502,53 @@ class UsbAudio(unittest.TestCase):
         m = self.base()
         self.assertFalse(m.usb_audio)
         self.assertFalse(Machine().usb_audio)
-        self.assertNotIn(USB_AUDIO, pairs(command.build_argv(m, "", "/m", "darwin")))
+        argv = command.build_argv(m, "", "/m", "darwin")
+        self.assertNotIn(USB_AUDIO, pairs(argv))
+        self.assertEqual(audiodevs(argv), ["coreaudio,id=snd"])
 
-    def test_on_appends_after_the_audiodev(self):
+    def test_off_leaves_the_launcher_byte_identical(self):
+        m = self.base()
+        m.usb_audio = False
+        for platform, qd in (("darwin", "/q"), ("win32", r"C:\q")):
+            argv = command.build_argv(m, qd, "/m", platform)
+            self.assertEqual(len(audiodevs(argv)), 1)
+            self.assertNotIn("usb", command.launcher_text(m, qd, "/m", platform))
+
+    def test_on_adds_a_second_backend_in_order(self):
         m = self.base()
         m.usb_audio = True
-        for platform in ("darwin", "win32"):
-            p = pairs(command.build_argv(m, "", "/m", platform))
-            self.assertIn(USB_AUDIO, p)
-            self.assertEqual(p[p.index(USB_AUDIO) - 1], ["-global", "screamer.audiodev=snd"])
+        for platform, backend in (("darwin", "coreaudio"), ("win32", "dsound")):
+            argv = command.build_argv(m, "", "/m", platform)
+            p = pairs(argv)
+            self.assertEqual(audiodevs(argv), [f"{backend},id=snd", f"{backend},id=usb"])
+            i = p.index(USB_AUDIO)
+            self.assertEqual(p[i - 3:i + 1], [["-audiodev", f"{backend},id=snd"], SCREAMER,
+                                              ["-audiodev", f"{backend},id=usb"], USB_AUDIO])
+
+    def test_second_backend_follows_the_audio_choice(self):
+        m = self.base()
+        m.usb_audio = True
+        m.audio = "sdl"
+        self.assertEqual(audiodevs(command.build_argv(m, "", "/m", "darwin")),
+                         ["sdl,id=snd", "sdl,id=usb"])
+        self.assertEqual(audiodevs(command.build_argv(m, "", "/m", "win32")),
+                         ["sdl,id=snd", "sdl,id=usb"])
+        m.audio = "none"
+        self.assertEqual(audiodevs(command.build_argv(m, "", "/m", "darwin")),
+                         ["none,id=snd", "none,id=usb"])
 
     def test_not_doubled_when_extra_args_already_has_one(self):
         m = self.base()
         m.usb_audio = True
         m.extra_args = "-device usb-audio,audiodev=snd"
         argv = command.build_argv(m, "", "/m", "darwin")
-        self.assertEqual(pairs(argv).count(USB_AUDIO), 1)
-        self.assertEqual(argv[-2:], USB_AUDIO)
+        self.assertNotIn(USB_AUDIO, pairs(argv))
+        self.assertEqual(audiodevs(argv), ["coreaudio,id=snd"])
+        self.assertEqual(argv[-2:], ["-device", "usb-audio,audiodev=snd"])
         m.extra_args = "-device usb-audio"
         argv = command.build_argv(m, "", "/m", "darwin")
         self.assertEqual(sum(1 for t in argv if t.startswith("usb-audio")), 1)
+        self.assertEqual(audiodevs(argv), ["coreaudio,id=snd"])
 
     def test_json_round_trip_and_missing_key(self):
         m = self.base()
@@ -528,9 +564,11 @@ class UsbAudio(unittest.TestCase):
         m = self.base()
         m.usb_audio = True
         mac = command.launcher_text(m, "/q", "/m", "darwin")
-        self.assertIn("-device usb-audio,audiodev=snd \\\n", mac)
+        self.assertIn("-audiodev coreaudio,id=snd \\\n-global screamer.audiodev=snd \\\n"
+                      "-audiodev coreaudio,id=usb \\\n-device usb-audio,audiodev=usb \\\n", mac)
         bat = command.launcher_text(m, r"C:\q", r"C:\m", "win32")
-        self.assertIn('-device "usb-audio,audiodev=snd" ^\r\n', bat)
+        self.assertIn('-audiodev "dsound,id=snd" ^\r\n-global screamer.audiodev=snd ^\r\n'
+                      '-audiodev "dsound,id=usb" ^\r\n-device "usb-audio,audiodev=usb" ^\r\n', bat)
         m.usb_audio = False
         self.assertNotIn("usb-audio", command.launcher_text(m, "/q", "/m", "darwin"))
         self.assertNotIn("usb-audio", command.launcher_text(m, r"C:\q", r"C:\m", "win32"))
