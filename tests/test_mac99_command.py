@@ -373,8 +373,9 @@ class ExtraArgsQuoting(unittest.TestCase):
     launcher, so spaces, single quotes and '?' survive verbatim; the argv
     the GUI spawns directly is the same list on every host."""
 
-    TEXT = "-prom-env 'boot-args=-v -x' -name \"it's\" -x 'a?b'"
-    WANT = ["-prom-env", "boot-args=-v -x", "-name", "it's", "-x", "a?b"]
+    TEXT = "-prom-env 'boot-args=-v' -prom-env 'boot-args=-v -x' -name \"it's\" -x 'a?b'"
+    WANT = ["-prom-env", "boot-args=-v", "-prom-env", "boot-args=-v -x", "-name", "it's",
+            "-x", "a?b"]
 
     def machine(self) -> Machine:
         m = load_fixture("mac99-osx.json")
@@ -384,18 +385,28 @@ class ExtraArgsQuoting(unittest.TestCase):
     def test_argv_is_the_same_on_every_host(self):
         for platform in ("darwin", "win32", "linux"):
             argv = command.build_argv(self.machine(), "", "/m", platform)
-            self.assertEqual(argv[-6:], self.WANT, platform)
+            self.assertEqual(argv[-len(self.WANT):], self.WANT, platform)
 
     def test_stored_string_is_verbatim(self):
         m = self.machine()
         self.assertEqual(Machine.from_json(m.to_json()).extra_args, self.TEXT)
 
     def test_bat_requotes_each_token(self):
-        argv = command.build_argv(self.machine(), r"C:\q", r"C:\m", "win32")
-        lines = command.render_bat(argv).split("\r\n")
+        m = self.machine()
+        argv = command.build_argv(m, r"C:\q", r"C:\m", "win32")
+        lines = command.render_bat(argv, command.extra_count(m, "win32")).split("\r\n")
+        self.assertIn('-prom-env "boot-args=-v" ^', lines)
         self.assertIn('-prom-env "boot-args=-v -x" ^', lines)
         self.assertIn("-name it's ^", lines)
         self.assertIn("-x a?b", lines)
+        self.assertIn("-global screamer.audiodev=snd ^", lines)
+
+    def test_extra_tokens_are_quoted_like_the_prom_env_lines(self):
+        text = command.launcher_text(self.machine(), "/q", "/m", "darwin")
+        lines = text.split("\n")
+        self.assertIn("-prom-env 'auto-boot?=true' \\", lines)
+        self.assertIn("-prom-env 'boot-args=-v' \\", lines)
+        self.assertIn("-M mac99,via=pmu \\", lines)
 
     @unittest.skipIf(paths.is_windows(), "needs bash")
     def test_run_command_reproduces_the_argv_when_executed(self):
@@ -407,10 +418,12 @@ class ExtraArgsQuoting(unittest.TestCase):
             fake.write_text('#!/bin/bash\nfor a in "$@"; do printf "%s\\n" "$a"; done\n')
             fake.chmod(0o755)
             path, argv = command.write_launcher(self.machine(), str(qd), td, "darwin")
-            self.assertIn("-prom-env 'boot-args=-v -x' \\\n", path.read_text())
+            text = path.read_text()
+            self.assertIn("-prom-env 'boot-args=-v' \\\n", text)
+            self.assertIn("-prom-env 'boot-args=-v -x' \\\n", text)
             got = subprocess.run([str(path)], capture_output=True, text=True, check=True)
             self.assertEqual(got.stdout.splitlines(), argv[1:])
-            self.assertEqual(got.stdout.splitlines()[-6:], self.WANT)
+            self.assertEqual(got.stdout.splitlines()[-len(self.WANT):], self.WANT)
 
 
 class RtcBase(unittest.TestCase):

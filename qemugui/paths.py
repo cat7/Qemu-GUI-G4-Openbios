@@ -238,6 +238,25 @@ def group_options(argv: list[str]) -> list[list[str]]:
     return groups
 
 
+def quote_extra(token: str) -> str:
+    """shlex.quote, plus single quotes around any token holding '='."""
+    if "=" in token:
+        return "'" + token.replace("'", "'\"'\"'") + "'"
+    return shlex.quote(token)
+
+
+def render_groups(argv: list[str], quote, quote_extra, extra: int) -> list[str]:
+    """One line per option; the last *extra* tokens of argv are quoted with
+    *quote_extra* instead of *quote*."""
+    plain = len(argv) - extra
+    out: list[str] = []
+    n = 1
+    for g in group_options(argv):
+        out.append(" ".join((quote_extra if n + j >= plain else quote)(t) for j, t in enumerate(g)))
+        n += len(g)
+    return out
+
+
 # Ask for the password ONCE. Without the keep-alive, sudo's ticket expires
 # during any run longer than its timeout (5 minutes by default) and the chown
 # below prompts a second time, in the middle of the guest's own output.
@@ -253,7 +272,7 @@ def sudo_chown_line(owned_files: tuple[str, ...]) -> str:
 
 
 def render_shell(argv: list[str], header_note: str, owned_files: tuple[str, ...] = (),
-                 sudo: bool = False) -> str:
+                 sudo: bool = False, extra: int = 0) -> str:
     lines = ["#!/bin/bash",
              f"# {header_note}",
              'cd "$(dirname "$0")"',
@@ -261,43 +280,49 @@ def render_shell(argv: list[str], header_note: str, owned_files: tuple[str, ...]
     if sudo:
         lines += [SUDO_KEEPALIVE, ""]
     lines.append(("sudo " if sudo else "") + shlex.quote(argv[0]) + " \\")
-    groups = group_options(argv)
-    for i, g in enumerate(groups):
-        cont = " \\" if i < len(groups) - 1 else ""
-        lines.append(" ".join(shlex.quote(t) for t in g) + cont)
+    body = render_groups(argv, shlex.quote, quote_extra, extra)
+    for i, ln in enumerate(body):
+        cont = " \\" if i < len(body) - 1 else ""
+        lines.append(ln + cont)
     if sudo:
         lines += ["", sudo_chown_line(owned_files)]
     return "\n".join(lines) + "\n"
 
 
-def bat_quote(token: str) -> str:
+def bat_quote(token: str, extra: bool = False) -> str:
     """cmd.exe quoting: whole-token double quotes when the token contains a
-    space or a comma (contract rule); '%' must be doubled in a .bat file."""
+    space or a comma (contract rule), or '=' for an extra argument; '%' must
+    be doubled in a .bat file."""
     t = token.replace("%", "%%")
-    if (" " in t or "," in t) and not (t.startswith('"') and t.endswith('"')):
+    if (" " in t or "," in t or (extra and "=" in t)) and not (t.startswith('"') and t.endswith('"')):
         return f'"{t}"'
     return t
 
 
-def render_bat(argv: list[str], header_note: str) -> str:
+def bat_quote_extra(token: str) -> str:
+    return bat_quote(token, extra=True)
+
+
+def render_bat(argv: list[str], header_note: str, extra: int = 0) -> str:
     lines = ["@echo off",
              f"rem {header_note}",
              'cd /d "%~dp0"',
              "",
              bat_quote(argv[0]) + " ^"]
-    groups = group_options(argv)
-    for i, g in enumerate(groups):
-        cont = " ^" if i < len(groups) - 1 else ""
-        lines.append(" ".join(bat_quote(t) for t in g) + cont)
+    body = render_groups(argv, bat_quote, bat_quote_extra, extra)
+    for i, ln in enumerate(body):
+        cont = " ^" if i < len(body) - 1 else ""
+        lines.append(ln + cont)
     return "\r\n".join(lines) + "\r\n"
 
 
 def render_launcher(argv: list[str], header_note: str, platform: str = HOST_PLATFORM,
-                    sudo: bool = False, owned_files: tuple[str, ...] = ()) -> str:
+                    sudo: bool = False, owned_files: tuple[str, ...] = (),
+                    extra: int = 0) -> str:
     """The .bat never gets sudo; *sudo* only affects the shell rendering."""
     if is_windows(platform):
-        return render_bat(argv, header_note)
-    return render_shell(argv, header_note, owned_files, sudo)
+        return render_bat(argv, header_note, extra)
+    return render_shell(argv, header_note, owned_files, sudo, extra)
 
 
 def browse_start_dir(current: str | None, fallback: Path | str | None = None) -> Path:

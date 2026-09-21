@@ -150,22 +150,27 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
 OWNED_SETTINGS_FILES = ("nvram.img",)
 
 
-def render_shell(argv: list[str], sudo: bool = False) -> str:
-    return paths.render_shell(argv, HEADER_NOTE, OWNED_SETTINGS_FILES, sudo)
+def extra_count(m: Machine, platform: str = paths.HOST_PLATFORM) -> int:
+    return len(split_extra_args(m.extra_args, platform))
 
 
-def render_bat(argv: list[str]) -> str:
-    return paths.render_bat(argv, HEADER_NOTE)
+def render_shell(argv: list[str], sudo: bool = False, extra: int = 0) -> str:
+    return paths.render_shell(argv, HEADER_NOTE, OWNED_SETTINGS_FILES, sudo, extra)
 
 
-def render_launcher(argv: list[str], platform: str = paths.HOST_PLATFORM, sudo: bool = False) -> str:
-    return paths.render_launcher(argv, HEADER_NOTE, platform, sudo, OWNED_SETTINGS_FILES)
+def render_bat(argv: list[str], extra: int = 0) -> str:
+    return paths.render_bat(argv, HEADER_NOTE, extra)
+
+
+def render_launcher(argv: list[str], platform: str = paths.HOST_PLATFORM, sudo: bool = False,
+                    extra: int = 0) -> str:
+    return paths.render_launcher(argv, HEADER_NOTE, platform, sudo, OWNED_SETTINGS_FILES, extra)
 
 
 def launcher_text(m: Machine, qemu_dir: str, machine_dir: str,
                   platform: str = paths.HOST_PLATFORM) -> str:
     return render_launcher(build_argv(m, qemu_dir, machine_dir, platform), platform,
-                           needs_sudo(m, platform))
+                           needs_sudo(m, platform), extra_count(m, platform))
 
 
 def write_launcher(m: Machine, qemu_dir: str, machine_dir: str,
@@ -176,7 +181,7 @@ def write_launcher(m: Machine, qemu_dir: str, machine_dir: str,
     from .mac99_model import ensure_nvram_file
     ensure_nvram_file(machine_dir)
     argv = build_argv(m, qemu_dir, machine_dir, platform)
-    text = render_launcher(argv, platform, needs_sudo(m, platform))
+    text = render_launcher(argv, platform, needs_sudo(m, platform), extra_count(m, platform))
     path = Path(machine_dir) / paths.launcher_name(platform)
     path.write_text(text, encoding="utf-8", newline="")
     if not paths.is_windows(platform):
