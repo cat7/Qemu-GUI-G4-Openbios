@@ -190,7 +190,7 @@ class MachineEditor(tk.Toplevel):
         ttk.Spinbox(f, textvariable=self.smp_var, from_=model.SMP_MIN, to=model.SMP_MAX,
                    width=5).grid(row=r, column=1, sticky="w", pady=4)
         r += 1
-        ttk.Label(f, text="Mac OS 9 loses keyboard control with 2+ CPUs; Mac OS X may use up to 4.",
+        ttk.Label(f, text="Use max 2 CPUS for Mac OS 9 up to OSX 10.3, use 4 CPUS for OSX 10.4 and 10.5 only",
                  foreground=GREY).grid(row=r, column=0, columnspan=2, sticky="w")
         r += 1
         ttk.Label(f, text="Via:").grid(row=r, column=0, sticky="w", pady=4)
