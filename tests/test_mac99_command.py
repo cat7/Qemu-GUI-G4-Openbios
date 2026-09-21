@@ -368,6 +368,51 @@ class Options(unittest.TestCase):
         self.assertEqual(argv[-2:], ["-qmp", "unix:/tmp/live.sock,server=on,wait=off"])
 
 
+class ExtraArgsQuoting(unittest.TestCase):
+    """The field is parsed like a shell and every token re-quoted for the
+    launcher, so spaces, single quotes and '?' survive verbatim; the argv
+    the GUI spawns directly is the same list on every host."""
+
+    TEXT = "-prom-env 'boot-args=-v -x' -name \"it's\" -x 'a?b'"
+    WANT = ["-prom-env", "boot-args=-v -x", "-name", "it's", "-x", "a?b"]
+
+    def machine(self) -> Machine:
+        m = load_fixture("mac99-osx.json")
+        m.extra_args = self.TEXT
+        return m
+
+    def test_argv_is_the_same_on_every_host(self):
+        for platform in ("darwin", "win32", "linux"):
+            argv = command.build_argv(self.machine(), "", "/m", platform)
+            self.assertEqual(argv[-6:], self.WANT, platform)
+
+    def test_stored_string_is_verbatim(self):
+        m = self.machine()
+        self.assertEqual(Machine.from_json(m.to_json()).extra_args, self.TEXT)
+
+    def test_bat_requotes_each_token(self):
+        argv = command.build_argv(self.machine(), r"C:\q", r"C:\m", "win32")
+        lines = command.render_bat(argv).split("\r\n")
+        self.assertIn('-prom-env "boot-args=-v -x" ^', lines)
+        self.assertIn("-name it's ^", lines)
+        self.assertIn("-x a?b", lines)
+
+    @unittest.skipIf(paths.is_windows(), "needs bash")
+    def test_run_command_reproduces_the_argv_when_executed(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as td:
+            qd = Path(td) / "q"
+            qd.mkdir()
+            fake = qd / paths.qemu_binary_name("darwin")
+            fake.write_text('#!/bin/bash\nfor a in "$@"; do printf "%s\\n" "$a"; done\n')
+            fake.chmod(0o755)
+            path, argv = command.write_launcher(self.machine(), str(qd), td, "darwin")
+            self.assertIn("-prom-env 'boot-args=-v -x' \\\n", path.read_text())
+            got = subprocess.run([str(path)], capture_output=True, text=True, check=True)
+            self.assertEqual(got.stdout.splitlines(), argv[1:])
+            self.assertEqual(got.stdout.splitlines()[-6:], self.WANT)
+
+
 USB_AUDIO = ["-device", "usb-audio,audiodev=snd"]
 
 
