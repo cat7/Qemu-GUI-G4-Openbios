@@ -378,12 +378,19 @@ class MachineEditor(tk.Toplevel):
         self.boot_args_var = tk.StringVar()
         ttk.Entry(f, textvariable=self.boot_args_var, width=30).grid(
             row=4, column=1, sticky="w", pady=(6, 0))
-        ttk.Separator(f).grid(row=5, column=0, columnspan=3, sticky="ew", pady=10)
+        ttk.Label(f, text="Date and time:").grid(row=5, column=0, sticky="w", pady=(6, 0))
+        self.rtc_base_var = tk.StringVar()
+        ttk.Combobox(f, textvariable=self.rtc_base_var, values=list(model.RTC_BASE_CHOICES),
+                    width=28).grid(row=5, column=1, sticky="w", pady=(6, 0))
+        ttk.Label(f, text="Empty: the host's clock (UTC). localtime: the host's local time. "
+                          "Or a fixed start like 2005-04-29T10:30:00.",
+                 foreground=GREY).grid(row=6, column=0, columnspan=3, sticky="w")
+        ttk.Separator(f).grid(row=7, column=0, columnspan=3, sticky="ew", pady=10)
         ttk.Label(f, text="Additional command line arguments", font=("", 0, "bold")).grid(
-            row=6, column=0, columnspan=3, sticky="w", pady=(0, 4))
+            row=8, column=0, columnspan=3, sticky="w", pady=(0, 4))
         self.extra_var = tk.StringVar()
         ttk.Entry(f, textvariable=self.extra_var, width=70).grid(
-            row=7, column=0, columnspan=3, sticky="ew")
+            row=9, column=0, columnspan=3, sticky="ew")
 
     def load(self, m: Machine):
         self.name_var.set(m.name)
@@ -419,6 +426,7 @@ class MachineEditor(tk.Toplevel):
         self.no_vga_driver_var.set(not m.prom_env.vga_ndrv)
         self.boot_device_var.set(m.prom_env.boot_device)
         self.boot_args_var.set(m.prom_env.boot_args)
+        self.rtc_base_var.set(m.rtc_base)
         self.extra_var.set(m.extra_args)
 
     def collect(self) -> Machine:
@@ -447,6 +455,7 @@ class MachineEditor(tk.Toplevel):
                         self.share_password_var.get(), self.share_scope.get())
         m.prom_env = PromEnv(not self.boot_into_ofw_var.get(), not self.no_vga_driver_var.get(),
                              self.boot_device_var.get().strip(), self.boot_args_var.get().strip())
+        m.rtc_base = self.rtc_base_var.get().strip()
         m.extra_args = self.extra_var.get().strip()
         return m
 

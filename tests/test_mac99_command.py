@@ -413,6 +413,55 @@ class ExtraArgsQuoting(unittest.TestCase):
             self.assertEqual(got.stdout.splitlines()[-6:], self.WANT)
 
 
+class RtcBase(unittest.TestCase):
+
+    ACCEPTED = ("localtime", "utc", "2005-04-29", "2005-04-29T10:30:00")
+
+    def base(self) -> Machine:
+        return load_fixture("mac99-osx.json")
+
+    def errors(self, m: Machine) -> list[str]:
+        return model.validate(m, None, "darwin", check_files=False)[0]
+
+    def test_empty_is_the_default_and_emits_nothing(self):
+        m = self.base()
+        self.assertEqual(m.rtc_base, "")
+        self.assertEqual(Machine().rtc_base, "")
+        self.assertNotIn("-rtc", command.build_argv(m, "", "/m", "darwin"))
+        self.assertEqual(self.errors(m), [])
+
+    def test_each_accepted_form(self):
+        for value in self.ACCEPTED:
+            m = self.base()
+            m.rtc_base = value
+            self.assertEqual(self.errors(m), [], value)
+            argv = command.build_argv(m, "", "/m", "darwin")
+            self.assertEqual(argv[argv.index("-rtc") + 1], f"base={value}")
+
+    def test_rejected_form(self):
+        m = self.base()
+        m.rtc_base = "29/04/2005 10:30"
+        self.assertTrue(any("Date and time" in e for e in self.errors(m)))
+
+    def test_json_round_trip_and_missing_key(self):
+        m = self.base()
+        m.rtc_base = "2005-04-29T10:30:00"
+        again = Machine.from_json(m.to_json())
+        self.assertEqual(again.rtc_base, m.rtc_base)
+        self.assertEqual(again, m)
+        d = json.loads(m.to_json())
+        del d["rtc_base"]
+        self.assertEqual(Machine.from_dict(d).rtc_base, "")
+
+    def test_both_launchers(self):
+        m = self.base()
+        m.rtc_base = "2005-04-29T10:30:00"
+        self.assertIn("-rtc base=2005-04-29T10:30:00",
+                      command.launcher_text(m, "/q", "/m", "darwin").split("\n"))
+        self.assertIn("-rtc base=2005-04-29T10:30:00",
+                      command.launcher_text(m, r"C:\q", r"C:\m", "win32").split("\r\n"))
+
+
 USB_AUDIO = ["-device", "usb-audio,audiodev=snd"]
 
 

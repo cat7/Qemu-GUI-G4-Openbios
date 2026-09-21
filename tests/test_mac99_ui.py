@@ -345,6 +345,53 @@ class UsbAudioCheckbox(unittest.TestCase):
 
 
 @unittest.skipUnless(_tk_available(), "no display")
+class DateAndTime(unittest.TestCase):
+
+    def _editor(self, m: Machine):
+        import tkinter as tk
+        from qemugui.mac99_ui_machine import MachineEditor
+        lib = model.Library(self.td.name)
+        root = tk.Tk(); root.withdraw()
+        self.roots.append(root)
+        ed = MachineEditor(root, m, lib, "/q", on_save=lambda *a: None)
+        ed.withdraw()
+        return ed
+
+    def setUp(self):
+        self.td = tempfile.TemporaryDirectory()
+        self.roots = []
+
+    def tearDown(self):
+        for r in self.roots:
+            r.destroy()
+        self.td.cleanup()
+
+    def test_empty_by_default(self):
+        ed = self._editor(Machine(name="t"))
+        self.assertEqual(ed.rtc_base_var.get(), "")
+        self.assertEqual(ed.collect().rtc_base, "")
+
+    def test_loads_and_collects(self):
+        ed = self._editor(Machine(name="t", rtc_base="localtime"))
+        self.assertEqual(ed.rtc_base_var.get(), "localtime")
+        ed.rtc_base_var.set(" 2005-04-29T10:30:00 ")
+        self.assertEqual(ed.collect().rtc_base, "2005-04-29T10:30:00")
+
+    def test_a_bad_value_is_reported_on_save(self):
+        import qemugui.mac99_ui_machine as ui_machine
+        ed = self._editor(Machine(name="t"))
+        ed.rtc_base_var.set("yesterday")
+        shown = []
+        orig = ui_machine.show_validation
+        ui_machine.show_validation = lambda parent, errors, warnings: (shown.append(errors), False)[1]
+        try:
+            ed.save()
+        finally:
+            ui_machine.show_validation = orig
+        self.assertTrue(any("Date and time" in e for e in shown[0]))
+
+
+@unittest.skipUnless(_tk_available(), "no display")
 class NoSystemChooserOnScreen(unittest.TestCase):
     """New machine asks for a name only -- there is no system-type chooser
     to find or to leave blank (user review, 2026-09-14)."""

@@ -101,6 +101,8 @@ SCHEMA = 1
 NAME_RE = re.compile(r"^[A-Za-z0-9._ -]+$")
 MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
 VNC_RE = re.compile(r"^([A-Za-z0-9.\-]*:)?\d+$")
+RTC_BASE_RE = re.compile(r"^(utc|localtime|\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?)$")
+RTC_BASE_CHOICES = ("", "localtime")
 
 # The four positions on the built-in IDE cable (index 0..3): two channels,
 # master and slave each, same convention g3beige uses.
@@ -326,6 +328,7 @@ class Machine:
     usb_storage: list = field(default_factory=list)
     prom_env: PromEnv = field(default_factory=PromEnv)
     share: Share = field(default_factory=Share)
+    rtc_base: str = ""
     extra_args: str = ""
     notes: str = ""
 
@@ -348,6 +351,7 @@ class Machine:
             "usb_storage": [u.to_dict() for u in self.usb_storage],
             "prom_env": self.prom_env.to_dict(),
             "share": self.share.to_dict(),
+            "rtc_base": self.rtc_base,
             "extra_args": self.extra_args,
             "notes": self.notes,
         }
@@ -378,6 +382,7 @@ class Machine:
             usb_storage=usb,
             prom_env=PromEnv.from_dict(d.get("prom_env")),
             share=Share.from_dict(d.get("share")),
+            rtc_base=str(d.get("rtc_base", "") or ""),
             extra_args=str(d.get("extra_args", "")),
             notes=str(d.get("notes", "")),
         )
@@ -472,6 +477,9 @@ def validate(m: Machine, qemu_dir: str | None, platform: str = paths.HOST_PLATFO
         warnings.append("'cocoa' only works on a Mac.")
     if m.vnc.strip() and not VNC_RE.match(m.vnc.strip()):
         errors.append("VNC display has to look like :1 or 127.0.0.1:1.")
+    if m.rtc_base.strip() and not RTC_BASE_RE.match(m.rtc_base.strip()):
+        errors.append("Date and time has to be localtime, utc, or look like "
+                      "2005-04-29T10:30:00.")
 
     net = m.network
     if net.mode not in NETWORK_MODES:

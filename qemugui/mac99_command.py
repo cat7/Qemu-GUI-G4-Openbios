@@ -139,6 +139,8 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
     argv += ["-global", "macio-nvram.drive=nvr"]
 
     argv += prom_env_tokens(m)
+    if m.rtc_base.strip():
+        argv += ["-rtc", f"base={m.rtc_base.strip()}"]
     argv += extra
     return argv
 
