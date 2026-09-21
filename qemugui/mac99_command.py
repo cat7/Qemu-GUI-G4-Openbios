@@ -102,6 +102,9 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
 
     audio = paths.resolve_audio(m.audio, platform)
     argv += ["-audiodev", f"{audio},id=snd", "-global", "screamer.audiodev=snd"]
+    extra = split_extra_args(m.extra_args, platform)
+    if m.usb_audio and not any(t.split(",")[0] == "usb-audio" for t in extra):
+        argv += ["-device", "usb-audio,audiodev=snd"]
 
     if m.gpu:
         parts = ["ati-rage128-pro"]
@@ -136,7 +139,7 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
     argv += ["-global", "macio-nvram.drive=nvr"]
 
     argv += prom_env_tokens(m)
-    argv += split_extra_args(m.extra_args, platform)
+    argv += extra
     return argv
 
 

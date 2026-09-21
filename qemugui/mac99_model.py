@@ -318,6 +318,7 @@ class Machine:
     display: str = "cocoa"
     vnc: str = ""                  # "" = off; else a -vnc display spec, e.g. ":1"
     audio: str = "default"
+    usb_audio: bool = False
     gpu: Gpu | None = None
     network: Network = field(default_factory=Network)
     boot_slot: int | None = None   # index into ata, or None -- see resolved_boot_kind
@@ -339,6 +340,7 @@ class Machine:
             "display": self.display,
             "vnc": self.vnc,
             "audio": self.audio,
+            "usb_audio": self.usb_audio,
             "gpu": self.gpu.to_dict() if self.gpu else None,
             "network": self.network.to_dict(),
             "boot_slot": self.boot_slot,
@@ -368,6 +370,7 @@ class Machine:
             display=str(d.get("display") or default_display()),
             vnc=str(d.get("vnc", "") or ""),
             audio=str(d.get("audio", "default")),
+            usb_audio=bool(d.get("usb_audio", False)),
             gpu=Gpu.from_dict(d.get("gpu")),
             network=Network.from_dict(d.get("network")),
             boot_slot=boot_slot,

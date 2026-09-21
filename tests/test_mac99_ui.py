@@ -310,6 +310,41 @@ class ShareTab(unittest.TestCase):
 
 
 @unittest.skipUnless(_tk_available(), "no display")
+class UsbAudioCheckbox(unittest.TestCase):
+
+    def _editor(self, m: Machine):
+        import tkinter as tk
+        from qemugui.mac99_ui_machine import MachineEditor
+        lib = model.Library(self.td.name)
+        root = tk.Tk(); root.withdraw()
+        self.roots.append(root)
+        ed = MachineEditor(root, m, lib, "/q", on_save=lambda *a: None)
+        ed.withdraw()
+        return ed
+
+    def setUp(self):
+        self.td = tempfile.TemporaryDirectory()
+        self.roots = []
+
+    def tearDown(self):
+        for r in self.roots:
+            r.destroy()
+        self.td.cleanup()
+
+    def test_off_by_default(self):
+        ed = self._editor(Machine(name="t"))
+        self.assertFalse(ed.usb_audio_var.get())
+        self.assertFalse(ed.collect().usb_audio)
+
+    def test_loads_and_collects(self):
+        ed = self._editor(Machine(name="t", usb_audio=True))
+        self.assertTrue(ed.usb_audio_var.get())
+        self.assertTrue(ed.collect().usb_audio)
+        ed.usb_audio_var.set(False)
+        self.assertFalse(ed.collect().usb_audio)
+
+
+@unittest.skipUnless(_tk_available(), "no display")
 class NoSystemChooserOnScreen(unittest.TestCase):
     """New machine asks for a name only -- there is no system-type chooser
     to find or to leave blank (user review, 2026-09-14)."""

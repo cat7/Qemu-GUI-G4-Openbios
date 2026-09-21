@@ -308,6 +308,12 @@ class MachineEditor(tk.Toplevel):
             row=7, column=0, columnspan=3, sticky="w")
         ttk.Radiobutton(f, text="None", variable=self.audio_var, value="none").grid(
             row=8, column=0, columnspan=3, sticky="w")
+        ttk.Separator(f).grid(row=9, column=0, columnspan=3, sticky="ew", pady=10)
+        ttk.Label(f, text="USB", font=("", 0, "bold")).grid(
+            row=10, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        self.usb_audio_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(f, text="USB audio device (microphone input)",
+                       variable=self.usb_audio_var).grid(row=11, column=0, columnspan=3, sticky="w")
 
     def _net_mode_changed(self, _e=None):
         mode = model.network_mode_by_label(self.net_mode.get())
@@ -406,6 +412,7 @@ class MachineEditor(tk.Toplevel):
         self.ifname_var.set(m.network.ifname)
         self._net_mode_changed()
         self.audio_var.set(m.audio)
+        self.usb_audio_var.set(m.usb_audio)
         self.share_folder_var.set(m.share.folder)
         self.share_user_var.set(m.share.user)
         self.share_password_var.set(m.share.password)
@@ -438,6 +445,7 @@ class MachineEditor(tk.Toplevel):
         ifname = self.ifname_var.get().strip() if mode in model.NETWORK_MODES_WITH_IFNAME else ""
         m.network = Network(mode, self.mac_var.get().strip(), ifname)
         m.audio = self.audio_var.get()
+        m.usb_audio = self.usb_audio_var.get()
         m.share = Share(self.share_folder_var.get().strip(), self.share_user_var.get().strip(),
                         self.share_password_var.get(), self.share_scope.get())
         m.prom_env = PromEnv(not self.boot_into_ofw_var.get(), not self.no_vga_driver_var.get(),

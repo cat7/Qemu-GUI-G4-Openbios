@@ -368,6 +368,67 @@ class Options(unittest.TestCase):
         self.assertEqual(argv[-2:], ["-qmp", "unix:/tmp/live.sock,server=on,wait=off"])
 
 
+USB_AUDIO = ["-device", "usb-audio,audiodev=snd"]
+
+
+def pairs(argv: list[str]) -> list[list[str]]:
+    return command.group_options(argv)
+
+
+class UsbAudio(unittest.TestCase):
+
+    def base(self) -> Machine:
+        m = load_fixture("mac99-osx.json")
+        m.extra_args = ""
+        return m
+
+    def test_off_by_default_and_absent(self):
+        m = self.base()
+        self.assertFalse(m.usb_audio)
+        self.assertFalse(Machine().usb_audio)
+        self.assertNotIn(USB_AUDIO, pairs(command.build_argv(m, "", "/m", "darwin")))
+
+    def test_on_appends_after_the_audiodev(self):
+        m = self.base()
+        m.usb_audio = True
+        for platform in ("darwin", "win32"):
+            p = pairs(command.build_argv(m, "", "/m", platform))
+            self.assertIn(USB_AUDIO, p)
+            self.assertEqual(p[p.index(USB_AUDIO) - 1], ["-global", "screamer.audiodev=snd"])
+
+    def test_not_doubled_when_extra_args_already_has_one(self):
+        m = self.base()
+        m.usb_audio = True
+        m.extra_args = "-device usb-audio,audiodev=snd"
+        argv = command.build_argv(m, "", "/m", "darwin")
+        self.assertEqual(pairs(argv).count(USB_AUDIO), 1)
+        self.assertEqual(argv[-2:], USB_AUDIO)
+        m.extra_args = "-device usb-audio"
+        argv = command.build_argv(m, "", "/m", "darwin")
+        self.assertEqual(sum(1 for t in argv if t.startswith("usb-audio")), 1)
+
+    def test_json_round_trip_and_missing_key(self):
+        m = self.base()
+        m.usb_audio = True
+        again = Machine.from_json(m.to_json())
+        self.assertTrue(again.usb_audio)
+        self.assertEqual(again, m)
+        d = json.loads(m.to_json())
+        del d["usb_audio"]
+        self.assertFalse(Machine.from_dict(d).usb_audio)
+
+    def test_both_launchers(self):
+        m = self.base()
+        m.usb_audio = True
+        mac = command.launcher_text(m, "/q", "/m", "darwin")
+        self.assertIn("-device usb-audio,audiodev=snd \\\n", mac)
+        bat = command.launcher_text(m, r"C:\q", r"C:\m", "win32")
+        self.assertIn('-device "usb-audio,audiodev=snd" ^\r\n', bat)
+        m.usb_audio = False
+        self.assertNotIn("usb-audio", command.launcher_text(m, "/q", "/m", "darwin"))
+        self.assertNotIn("usb-audio", command.launcher_text(m, r"C:\q", r"C:\m", "win32"))
+
+
 class WindowsRendering(unittest.TestCase):
 
     def test_bat_shape(self):
