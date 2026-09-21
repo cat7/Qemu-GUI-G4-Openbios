@@ -65,9 +65,11 @@ TERMINAL_STATUS = "Started in Terminal"
 
 
 def start_in_terminal(m: Machine, machine_dir: Path) -> tuple[Path, share.ShareServer | None]:
-    """vmnet needs a root password, and only Terminal can ask for one, so
-    this run cannot be followed; a shared folder stays up until the next
-    start or quit."""
+    """On macOS a QEMU child of this application runs with reduced display
+    performance and without microphone access; a Terminal-launched run has
+    neither problem, and Terminal is also the only place a vmnet run can ask
+    for the root password. The run cannot be followed from here; a shared
+    folder stays up until the next start or quit."""
     machine_dir = Path(machine_dir)
     machine_dir.mkdir(parents=True, exist_ok=True)
     launcher, _argv = command.write_launcher(m, qemu_dir(), str(machine_dir))
@@ -425,10 +427,10 @@ class MainWindow(tk.Tk):
         if errors:
             messagebox.showerror("Start", "\n".join(f"• {e}" for e in errors))
             return None
-        if command.needs_sudo(m):
-            if paths.HOST_PLATFORM != "darwin":
-                messagebox.showerror("Start", "This network setting only works on a Mac.")
-                return None
+        if command.needs_sudo(m) and paths.HOST_PLATFORM != "darwin":
+            messagebox.showerror("Start", "This network setting only works on a Mac.")
+            return None
+        if paths.HOST_PLATFORM == "darwin":
             self._stop_terminal_share(m.name)
             try:
                 _launcher, share_server = start_in_terminal(m, self.library.folder(m.name))

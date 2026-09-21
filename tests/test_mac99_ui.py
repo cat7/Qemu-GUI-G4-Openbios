@@ -329,5 +329,65 @@ class NoSystemChooserOnScreen(unittest.TestCase):
                 root.destroy()
 
 
+class _FakeRun:
+    exit_code = None
+    share = None
+
+    def poll(self):
+        return None
+
+    def uptime(self):
+        return 0.0
+
+
+@unittest.skipUnless(_tk_available(), "no display")
+class StartDispatch(unittest.TestCase):
+    """On macOS every start goes through Terminal, sudo or not; on any other
+    host the GUI runs the launcher itself and tracks the process."""
+
+    def setUp(self):
+        from qemugui import mac99_ui_main as ui
+        self.ui = ui
+        self.td = tempfile.TemporaryDirectory()
+        paths.use_install_dir(self.td.name)
+        self.saved = (paths.HOST_PLATFORM, ui.start_in_terminal, ui.start_machine)
+        self.calls: list[str] = []
+        ui.start_in_terminal = lambda m, d: (self.calls.append("terminal"), (Path(d) / "run.command", None))[1]
+        ui.start_machine = lambda m, d: (self.calls.append("direct"), _FakeRun())[1]
+        self.roots = []
+
+    def tearDown(self):
+        paths.HOST_PLATFORM, self.ui.start_in_terminal, self.ui.start_machine = self.saved
+        for r in self.roots:
+            r.destroy()
+        paths.use_install_dir(None)
+        self.td.cleanup()
+
+    def _window(self, platform: str):
+        paths.HOST_PLATFORM = platform
+        w = self.ui.MainWindow(paths.Settings(), settings_path=Path(self.td.name) / "settings.json")
+        w.withdraw()
+        self.roots.append(w)
+        w.library.save(model.new_machine("t"))
+        w.refresh_list(select="t")
+        return w
+
+    def test_macos_starts_in_terminal_without_sudo(self):
+        w = self._window("darwin")
+        self.assertIsNone(w.start_selected())
+        self.assertEqual(self.calls, ["terminal"])
+        self.assertNotIn("t", w.running)
+        self.assertIn("t", w.terminal_started)
+        self.assertTrue(w.run_status.cget("text").startswith(self.ui.TERMINAL_STATUS))
+
+    def test_other_hosts_run_the_launcher_directly(self):
+        w = self._window("linux")
+        self.assertIsNotNone(w.start_selected())
+        self.assertEqual(self.calls, ["direct"])
+        self.assertIn("t", w.running)
+        self.assertNotIn("t", w.terminal_started)
+        self.assertTrue(w.run_status.cget("text").startswith("Running"))
+
+
 if __name__ == "__main__":
     unittest.main()
