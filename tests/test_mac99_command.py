@@ -780,5 +780,48 @@ class WindowsParity(unittest.TestCase):
         self.assertIn("dsound,id=snd", command.build_argv(m, "", "/m", "win32"))
 
 
+class TheHostDecidesTheNetworkAndSoundWording(unittest.TestCase):
+    """Reported from the Windows build of the G3 GUI (2026-09-22) and shared
+    through paths.py: the interface field was labelled for vmnet, the network
+    came up as none, and the default sound choice was called CoreAudio."""
+
+    def setUp(self):
+        self.saved = paths.HOST_PLATFORM
+
+    def tearDown(self):
+        paths.HOST_PLATFORM = self.saved
+
+    def test_the_interface_label_names_what_the_host_uses(self):
+        self.assertEqual(model.ifname_label("darwin"), "Vmnet host interface:")
+        self.assertEqual(model.ifname_label("win32"), "Tap device name:")
+        self.assertEqual(model.ifname_label("linux"), "Tap device name:")
+
+    def test_the_default_sound_choice_is_named_after_the_backend(self):
+        self.assertEqual(model.default_audio_label("darwin"), "CoreAudio")
+        self.assertEqual(model.default_audio_label("win32"), "DirectSound")
+        self.assertEqual(paths.resolve_audio("default", "win32"), "dsound")
+        self.assertEqual(paths.resolve_audio("default", "darwin"), "coreaudio")
+        self.assertEqual(paths.resolve_audio("sdl", "win32"), "sdl")
+
+    def test_a_new_machine_uses_slirp_and_the_default_sound_on_every_host(self):
+        for platform in ("darwin", "win32", "linux"):
+            paths.HOST_PLATFORM = platform
+            m = model.new_machine("Fresh")
+            self.assertEqual(m.network.mode, "user", platform)
+            self.assertEqual(m.audio, "default", platform)
+            offered = model.network_labels_for_host(platform)
+            self.assertIn(model.network_mode_label("user"), offered, platform)
+            self.assertEqual(offered[0], "default (slirp)", platform)
+            self.assertEqual(model.Machine.from_dict(json.loads(m.to_json())).network.mode,
+                             "user", platform)
+
+    def test_a_record_saved_on_a_mac_plays_through_dsound_on_windows(self):
+        m = model.new_machine("Fresh")
+        self.assertEqual(json.loads(m.to_json())["audio"], "default")
+        self.assertIn("coreaudio,id=snd", command.build_argv(m, "", "/m", "darwin"))
+        self.assertIn("dsound,id=snd", command.build_argv(m, "", "/m", "win32"))
+        self.assertNotIn("coreaudio,id=snd", command.build_argv(m, "", "/m", "win32"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -93,7 +93,8 @@ from . import paths
 from .paths import (DISPLAYS, default_display, AUDIO_DEFAULT,
                     NETWORK_MODES, NETWORK_MODE_PLATFORM, NETWORK_MODES_WITH_IFNAME,
                     NETWORK_MODE_LABELS, network_mode_label, network_mode_by_label,
-                    network_modes_for_host, network_labels_for_host, default_ifname)
+                    network_modes_for_host, network_labels_for_host, default_ifname,
+                    ifname_label, default_audio_label)
 
 DEFAULT_MAC = "00:05:02:12:34:56"
 

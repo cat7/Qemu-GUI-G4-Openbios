@@ -345,6 +345,62 @@ class UsbAudioCheckbox(unittest.TestCase):
 
 
 @unittest.skipUnless(_tk_available(), "no display")
+class TheNetworkAndSoundTabFollowsTheHost(unittest.TestCase):
+    """The Windows build of the G3 GUI showed the Mac's wording and came up
+    with no network (user, 2026-09-22); this editor is built the same way.
+    A new machine opened on either host shows slirp, the host's own
+    interface label and the host's own sound backend."""
+
+    def setUp(self):
+        self.saved = paths.HOST_PLATFORM
+        self.td = tempfile.TemporaryDirectory()
+        self.roots = []
+
+    def tearDown(self):
+        paths.HOST_PLATFORM = self.saved
+        for r in self.roots:
+            r.destroy()
+        self.td.cleanup()
+
+    def _tab(self, platform: str):
+        import tkinter as tk
+        from qemugui.mac99_ui_machine import MachineEditor
+        paths.HOST_PLATFORM = platform
+        lib = model.Library(self.td.name)
+        root = tk.Tk(); root.withdraw()
+        self.roots.append(root)
+        ed = MachineEditor(root, model.new_machine(""), lib, "/q",
+                           on_save=lambda *a: None, is_new=True)
+        ed.withdraw()
+        return ed
+
+    def test_windows(self):
+        ed = self._tab("win32")
+        self.assertEqual(ed.net_mode.get(), "default (slirp)")
+        self.assertEqual(ed.net_mode_cb.get(), "default (slirp)")
+        values = list(ed.net_mode_cb.cget("values"))
+        self.assertEqual(values[0], "default (slirp)")
+        self.assertIn("tap", values)
+        self.assertFalse(any(v.startswith("vmnet") for v in values), values)
+        self.assertEqual(str(ed.ifname_label.cget("text")), "Tap device name:")
+        self.assertEqual(ed.audio_var.get(), "default")
+        self.assertEqual(str(ed.audio_default_rb.cget("text")), "DirectSound")
+        self.assertEqual(ed.collect().network.mode, "user")
+        self.assertEqual(ed.collect().audio, "default")
+
+    def test_mac(self):
+        ed = self._tab("darwin")
+        self.assertEqual(ed.net_mode.get(), "default (slirp)")
+        values = list(ed.net_mode_cb.cget("values"))
+        self.assertEqual(values[0], "default (slirp)")
+        self.assertIn("vmnet-bridged", values)
+        self.assertNotIn("tap", values)
+        self.assertEqual(str(ed.ifname_label.cget("text")), "Vmnet host interface:")
+        self.assertEqual(str(ed.audio_default_rb.cget("text")), "CoreAudio")
+        self.assertEqual(ed.collect().network.mode, "user")
+
+
+@unittest.skipUnless(_tk_available(), "no display")
 class DateAndTime(unittest.TestCase):
 
     def _editor(self, m: Machine):

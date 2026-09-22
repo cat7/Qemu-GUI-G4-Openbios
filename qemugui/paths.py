@@ -155,9 +155,9 @@ def resolve_audio(audio: str, platform: str = HOST_PLATFORM) -> str:
 
 # ------------------------------------------------------- network backends
 
-NETWORK_MODES = ("none", "user", "vmnet-bridged", "vmnet-shared", "vmnet-host", "tap")
+NETWORK_MODES = ("user", "none", "vmnet-bridged", "vmnet-shared", "vmnet-host", "tap")
 # platform each mode is meant for (None = all); "darwin" | "win32"
-NETWORK_MODE_PLATFORM = {"none": None, "user": None, "vmnet-bridged": "darwin",
+NETWORK_MODE_PLATFORM = {"user": None, "none": None, "vmnet-bridged": "darwin",
                          "vmnet-shared": "darwin", "vmnet-host": "darwin", "tap": "win32"}
 NETWORK_MODES_WITH_IFNAME = ("vmnet-bridged", "tap")
 NETWORK_MODE_LABELS = {"user": "default (slirp)"}
@@ -191,6 +191,19 @@ def default_ifname(mode: str, platform: str = HOST_PLATFORM) -> str:
     if mode == "vmnet-bridged" and platform == "darwin":
         return "en0"
     return ""
+
+
+def ifname_label(platform: str = HOST_PLATFORM) -> str:
+    return "Vmnet host interface:" if platform == "darwin" else "Tap device name:"
+
+
+AUDIO_BACKEND_LABELS = {"coreaudio": "CoreAudio", "dsound": "DirectSound", "sdl": "Default (sdl)"}
+
+
+def default_audio_label(platform: str = HOST_PLATFORM) -> str:
+    """What the "default" sound choice is called on this host."""
+    backend = resolve_audio("default", platform)
+    return AUDIO_BACKEND_LABELS.get(backend, backend)
 
 
 def sudo_applies(needs_sudo: bool, platform: str = HOST_PLATFORM) -> bool:
