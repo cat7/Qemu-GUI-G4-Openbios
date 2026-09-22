@@ -40,8 +40,8 @@ distribution folder that holds `qemu-system-ppc` and `pc-bios/`.
     pyinstaller --noconfirm Mac99GUI.spec
 
 `Mac99GUI.spec` targets `universal2` only on macOS; on Windows it produces
-a windowed, onedir build at `dist/Qemu-system-ppc Mac99 openbios GUI/`. Put
-that folder's contents alongside `qemu-system-ppc.exe`.
+a single windowed executable, `dist/Qemu-system-ppc Mac99 openbios GUI.exe`.
+Put it alongside `qemu-system-ppc.exe`.
 
 ## Tests
 

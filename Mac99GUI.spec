@@ -7,8 +7,9 @@
 #   /Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13 \
 #       -m PyInstaller --noconfirm Mac99GUI.spec
 #
-# Put the result ("dist/Qemu-system-ppc Mac99 openbios GUI.app") into the
-# distribution folder that holds the universal qemu-system-ppc binary and
+# Put the result ("dist/Qemu-system-ppc Mac99 openbios GUI.app" on macOS,
+# the single "dist/Qemu-system-ppc Mac99 openbios GUI.exe" on Windows) into
+# the distribution folder that holds the qemu-system-ppc binary and
 # pc-bios/. paths.resolve_install_dir walks up out of the .app to find that
 # folder; Machines/ stays beside the application, never inside the
 # (read-only) bundle.
@@ -34,42 +35,58 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
-    name='Qemu-system-ppc Mac99 openbios GUI',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=False,
-    console=False,
-    target_arch=TARGET_ARCH,
-    codesign_identity=None,
-    entitlements_file=None,
-)
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=False,
-    name='Qemu-system-ppc Mac99 openbios GUI',
-)
-app = BUNDLE(
-    coll,
-    name='Qemu-system-ppc Mac99 openbios GUI.app',
-    icon=None,
-    bundle_identifier='org.cat7.qemu-gui-mac99',
-    info_plist={
-        'CFBundleName': 'Qemu-system-ppc Mac99 openbios GUI',
-        'CFBundleDisplayName': 'Qemu-system-ppc Mac99 openbios GUI',
-        'CFBundleShortVersionString': '1.0',
-        'CFBundleVersion': '1.0',
-        'NSHighResolutionCapable': True,
-        'LSMinimumSystemVersion': '10.13',
-        'LSApplicationCategoryType': 'public.app-category.utilities',
-        'NSMicrophoneUsageDescription': 'The emulated machine uses the microphone as its audio input.',
-    },
-)
+if sys.platform == 'win32':
+    # One self-contained .exe; it unpacks itself to a temp folder at start.
+    exe = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,
+        a.datas,
+        [],
+        name='Qemu-system-ppc Mac99 openbios GUI',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,
+        console=False,
+    )
+else:
+    exe = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        name='Qemu-system-ppc Mac99 openbios GUI',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,
+        console=False,
+        target_arch=TARGET_ARCH,
+        codesign_identity=None,
+        entitlements_file=None,
+    )
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.datas,
+        strip=False,
+        upx=False,
+        name='Qemu-system-ppc Mac99 openbios GUI',
+    )
+    app = BUNDLE(
+        coll,
+        name='Qemu-system-ppc Mac99 openbios GUI.app',
+        icon=None,
+        bundle_identifier='org.cat7.qemu-gui-mac99',
+        info_plist={
+            'CFBundleName': 'Qemu-system-ppc Mac99 openbios GUI',
+            'CFBundleDisplayName': 'Qemu-system-ppc Mac99 openbios GUI',
+            'CFBundleShortVersionString': '1.0',
+            'CFBundleVersion': '1.0',
+            'NSHighResolutionCapable': True,
+            'LSMinimumSystemVersion': '10.13',
+            'LSApplicationCategoryType': 'public.app-category.utilities',
+            'NSMicrophoneUsageDescription': 'The emulated machine uses the microphone as its audio input.',
+        },
+    )
