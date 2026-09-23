@@ -23,6 +23,10 @@ from .mac99_ui_machine import MachineEditor
 APP_TITLE = "Qemu-system-ppc Mac99 openbios GUI"
 LOG_NAME = "last-run.log"
 
+# Defined by subprocess only on Windows; named here so the dispatch can be
+# tested on any host.
+CREATE_NEW_CONSOLE = getattr(subprocess, "CREATE_NEW_CONSOLE", 0x00000010)
+
 
 def qemu_dir() -> str:
     return str(paths.install_dir())
@@ -52,7 +56,8 @@ class RunningMachine:
                 self.share.stop()
                 self.share = None
             try:
-                self._log_fh.close()
+                if self._log_fh:
+                    self._log_fh.close()
             except OSError:
                 pass
         return rc
@@ -89,24 +94,34 @@ def start_machine(m: Machine, machine_dir: Path) -> RunningMachine:
     it prints in last-run.log."""
     machine_dir = Path(machine_dir)
     machine_dir.mkdir(parents=True, exist_ok=True)
-    _launcher, argv = command.write_launcher(m, qemu_dir(), str(machine_dir))
+    launcher, argv = command.write_launcher(m, qemu_dir(), str(machine_dir), paths.HOST_PLATFORM)
     log_path = machine_dir / LOG_NAME
     log_path.write_text("# " + " ".join(argv) + "\n", encoding="utf-8")
-    log_fh = open(log_path, "a", encoding="utf-8")
+    windows = paths.is_windows(paths.HOST_PLATFORM)
+    # This program is a windowed build, so on Windows the emulator would get a
+    # console of its own anyway; run the .bat in it and let it show its output
+    # there instead of into a file nobody is looking at.
+    log_fh = None if windows else open(log_path, "a", encoding="utf-8")
     share_server = None
     if m.share.enabled:
         try:
             share_server = share.start_share(m, log_path)
         except share.ShareError:
-            log_fh.close()
+            if log_fh:
+                log_fh.close()
             raise
     try:
-        proc = subprocess.Popen(argv, cwd=str(machine_dir), stdout=log_fh, stderr=subprocess.STDOUT,
-                                stdin=subprocess.DEVNULL)
+        if windows:
+            proc = subprocess.Popen(["cmd.exe", "/c", str(launcher)], cwd=str(machine_dir),
+                                    creationflags=CREATE_NEW_CONSOLE)
+        else:
+            proc = subprocess.Popen(argv, cwd=str(machine_dir), stdout=log_fh,
+                                    stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
     except OSError:
         if share_server:
             share_server.stop()
-        log_fh.close()
+        if log_fh:
+            log_fh.close()
         raise
     return RunningMachine(m.name, proc, log_path, argv, log_fh, share_server)
 

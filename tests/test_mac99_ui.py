@@ -527,5 +527,57 @@ class StartDispatch(unittest.TestCase):
         self.assertTrue(w.run_status.cget("text").startswith("Running"))
 
 
+@unittest.skipUnless(_tk_available(), "no display")
+class WindowsSpawn(unittest.TestCase):
+    """The console Windows hands out is the one QEMU should print into: the
+    .bat runs in a new console with no redirection. Other hosts are untouched."""
+
+    def setUp(self):
+        from qemugui import mac99_ui_main as ui
+        self.ui = ui
+        self.saved = (paths.HOST_PLATFORM, ui.subprocess.Popen)
+        self.td = tempfile.TemporaryDirectory()
+        paths.use_install_dir(self.td.name)
+        self.calls = []
+
+        class FakePopen:
+            pid = 4321
+
+            def __init__(_s, argv, **kw):
+                self.calls.append((argv, kw))
+
+            def poll(_s):
+                return None
+
+        ui.subprocess.Popen = FakePopen
+
+    def tearDown(self):
+        paths.HOST_PLATFORM, self.ui.subprocess.Popen = self.saved
+        paths.use_install_dir(None)
+        self.td.cleanup()
+
+    def _start(self, platform: str):
+        paths.HOST_PLATFORM = platform
+        return self.ui.start_machine(model.new_machine("t"), Path(self.td.name) / "t")
+
+    def test_windows_gets_a_new_console_and_no_redirection(self):
+        run = self._start("win32")
+        argv, kw = self.calls[0]
+        self.assertTrue(str(argv[-1]).endswith("run.bat"), argv)
+        self.assertEqual(kw["creationflags"], self.ui.CREATE_NEW_CONSOLE)
+        self.assertNotIn("stdout", kw)
+        self.assertNotIn("stderr", kw)
+        self.assertIsNone(run.poll())
+        self.assertTrue(run.log_path.read_text().startswith("# "))
+
+    def test_other_hosts_still_redirect_into_the_log(self):
+        run = self._start("linux")
+        self.addCleanup(run._log_fh.close)
+        argv, kw = self.calls[0]
+        self.assertTrue(str(argv[0]).endswith("qemu-system-ppc"), argv)
+        self.assertNotIn("creationflags", kw)
+        self.assertIsNotNone(kw["stdout"])
+
+
 if __name__ == "__main__":
     unittest.main()

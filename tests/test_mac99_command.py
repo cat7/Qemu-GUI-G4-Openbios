@@ -891,5 +891,40 @@ class ImageFormatDetection(unittest.TestCase):
         self.assertTrue(any("x.qcow2" in t and "format=raw" in t for t in argv), argv)
 
 
+class WindowsConsoleWindow(unittest.TestCase):
+    """User report 2026-09-23: on Windows a start opened a large, empty
+    console, because the console-subsystem emulator got a default console of
+    its own while all its output went into last-run.log."""
+
+    def _bat(self, name: str = "Mac OS X") -> str:
+        m = model.new_machine(name)
+        return command.launcher_text(m, r"C:\mac99", r"C:\m", "win32")
+
+    def test_the_bat_names_sizes_and_holds_its_console(self):
+        lines = self._bat().split("\r\n")
+        self.assertEqual(lines[0], "@echo off")
+        self.assertIn("title Mac OS X", lines)
+        self.assertIn("mode con: cols=100 lines=30", lines)
+        self.assertEqual(lines[-2], "if errorlevel 1 pause")
+        self.assertLess(lines.index("mode con: cols=100 lines=30"),
+                        lines.index('cd /d "%~dp0"'))
+
+    def test_a_title_cmd_would_choke_on_is_cleaned_up(self):
+        self.assertEqual(paths.bat_title('a & b > c ^ d "e" 100%'), "a  b  c  d e 100")
+        self.assertEqual(paths.bat_title(""), paths.BAT_TITLE)
+        self.assertEqual(paths.bat_title("x" * 60), "x" * 40)
+
+    def test_the_continuation_contract_is_unchanged(self):
+        body = [ln for ln in self._bat().split("\r\n") if ln.startswith("-")]
+        for ln in body[:-1]:
+            self.assertTrue(ln.endswith(" ^"), ln)
+        self.assertFalse(body[-1].endswith("^"))
+
+    def test_the_posix_launcher_gains_nothing(self):
+        text = command.launcher_text(model.new_machine("Mac OS X"), "/q", "/m", "darwin")
+        for token in ("mode con", "title ", "pause", "errorlevel"):
+            self.assertNotIn(token, text)
+
+
 if __name__ == "__main__":
     unittest.main()

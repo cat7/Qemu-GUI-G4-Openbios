@@ -362,9 +362,27 @@ def bat_quote_extra(token: str) -> str:
     return bat_quote(token, extra=True)
 
 
-def render_bat(argv: list[str], header_note: str, extra: int = 0) -> str:
+# The GUI is a windowed build, so Windows gives the emulator a fresh console of
+# its own: name it, cut it down to a readable size, and hold it open on a
+# failure long enough to read what went wrong.
+BAT_TITLE = "Qemu-system-ppc"
+BAT_MODE = "mode con: cols=100 lines=30"
+BAT_PAUSE = "if errorlevel 1 pause"
+
+
+def bat_title(name: str) -> str:
+    """cmd's `title` takes the rest of the line raw, so drop anything it would
+    redirect, expand or quote."""
+    text = "".join(c for c in str(name or "")
+                   if c.isprintable() and c not in '&<>|^"%')
+    return text.strip()[:40] or BAT_TITLE
+
+
+def render_bat(argv: list[str], header_note: str, extra: int = 0, title: str = "") -> str:
     lines = ["@echo off",
              f"rem {header_note}",
+             f"title {bat_title(title)}",
+             BAT_MODE,
              'cd /d "%~dp0"',
              "",
              bat_quote(argv[0]) + " ^"]
@@ -372,15 +390,16 @@ def render_bat(argv: list[str], header_note: str, extra: int = 0) -> str:
     for i, ln in enumerate(body):
         cont = " ^" if i < len(body) - 1 else ""
         lines.append(ln + cont)
+    lines += ["", BAT_PAUSE]
     return "\r\n".join(lines) + "\r\n"
 
 
 def render_launcher(argv: list[str], header_note: str, platform: str = HOST_PLATFORM,
                     sudo: bool = False, owned_files: tuple[str, ...] = (),
-                    extra: int = 0) -> str:
+                    extra: int = 0, title: str = "") -> str:
     """The .bat never gets sudo; *sudo* only affects the shell rendering."""
     if is_windows(platform):
-        return render_bat(argv, header_note, extra)
+        return render_bat(argv, header_note, extra, title)
     return render_shell(argv, header_note, owned_files, sudo, extra)
 
 
