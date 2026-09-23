@@ -19,7 +19,8 @@ docstring for what that character actually selects.
 from __future__ import annotations
 
 from . import paths
-from .paths import qopt, split_extra_args, group_options, bat_quote, SUDO_KEEPALIVE  # re-exported
+from .paths import (qopt, split_extra_args, group_options, bat_quote, drive_format,
+                    SUDO_KEEPALIVE)  # re-exported
 from . import mac99_model as model
 from .mac99_model import Machine
 
@@ -120,14 +121,16 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
             continue
         media = "cdrom" if d.kind == "cdrom" else "disk"
         argv += ["-drive", f"file={qopt(_path(d.file, machine_dir, platform))},"
-                           f"format={d.format or 'raw'},media={media},index={index}"]
+                           f"format={drive_format(d.format, d.file, machine_dir)},"
+                           f"media={media},index={index}"]
 
     for i, u in enumerate(m.usb_storage):
         if not u.file:
             continue
         drive_id = f"usbs{i}"
         argv += ["-drive", f"file={qopt(_path(u.file, machine_dir, platform))},"
-                           f"format={u.format or 'raw'},if=none,id={drive_id}"]
+                           f"format={drive_format(u.format, u.file, machine_dir)},"
+                           f"if=none,id={drive_id}"]
         argv += ["-device", f"usb-storage,drive={drive_id}"]
 
     # NVRAM: mac99's macio-nvram is volatile unless a drive is attached

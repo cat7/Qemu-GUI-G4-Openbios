@@ -31,18 +31,22 @@ GREY = "gray"
 EDITOR_WIDTH = 780
 
 
-def browse_file(parent, var: tk.StringVar, filetypes, fallback: Path | str | None = None) -> None:
+def browse_file(parent, var: tk.StringVar, filetypes, fallback: Path | str | None = None) -> str:
     start = paths.browse_start_dir(var.get(), fallback)
     f = filedialog.askopenfilename(parent=parent, initialdir=str(start), filetypes=filetypes)
     if f:
         var.set(f)
+        return f
+    return ""
 
 
 class FilePicker:
-    def __init__(self, master, var: tk.StringVar, filetypes, width: int = 40, fallback=None):
+    def __init__(self, master, var: tk.StringVar, filetypes, width: int = 40, fallback=None,
+                 on_pick=None):
         self.var = var
         self.filetypes = filetypes
         self.fallback = fallback
+        self.on_pick = on_pick
         self.entry = ttk.Entry(master, textvariable=var, width=width)
         self.entry.bind("<Double-Button-1>", self._browse)
         var.trace_add("write", lambda *_a: self._refresh())
@@ -58,7 +62,9 @@ class FilePicker:
 
     def _browse(self, _e=None):
         fb = self.fallback() if callable(self.fallback) else self.fallback
-        browse_file(self.entry.winfo_toplevel(), self.var, self.filetypes, fb)
+        chosen = browse_file(self.entry.winfo_toplevel(), self.var, self.filetypes, fb)
+        if chosen and self.on_pick:
+            self.on_pick(chosen)
         return "break"
 
 
@@ -79,13 +85,19 @@ class AtaRow:
                           state="readonly", width=9)
         cb.grid(row=row, column=1, padx=2, pady=1)
         cb.bind("<<ComboboxSelected>>", self._kind_changed)
-        self.picker = FilePicker(master, self.file, IMAGE_TYPES, width=40, fallback=fallback)
+        self.picker = FilePicker(master, self.file, IMAGE_TYPES, width=40, fallback=fallback,
+                                 on_pick=self._file_picked)
         self.picker.grid(row=row, column=2, sticky="ew", padx=2, pady=1)
         self.file.trace_add("write", lambda *_a: self._infer_kind())
         ttk.Combobox(master, textvariable=self.format, values=model.FORMATS, state="readonly",
                     width=6).grid(row=row, column=3, padx=2)
         ttk.Checkbutton(master, text="Boot", variable=self.boot,
                        command=self._boot_toggled).grid(row=row, column=4, padx=(6, 0))
+
+    def _file_picked(self, path: str):
+        """Only a file chosen through the dialog re-detects the format, so a
+        format set by hand survives until another file is chosen."""
+        self.format.set(model.detect_format(path))
 
     def _infer_kind(self):
         if KIND_BY_LABEL[self.kind.get()] or not self.file.get().strip():

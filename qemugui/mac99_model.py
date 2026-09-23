@@ -94,7 +94,7 @@ from .paths import (DISPLAYS, default_display, AUDIO_DEFAULT,
                     NETWORK_MODES, NETWORK_MODE_PLATFORM, NETWORK_MODES_WITH_IFNAME,
                     NETWORK_MODE_LABELS, network_mode_label, network_mode_by_label,
                     network_modes_for_host, network_labels_for_host, default_ifname,
-                    ifname_label, default_audio_label)
+                    ifname_label, default_audio_label, FORMATS, detect_format)
 
 DEFAULT_MAC = "00:05:02:12:34:56"
 
@@ -111,7 +111,6 @@ ATA_SLOTS = ("IDE 0 Master", "IDE 0 Slave", "IDE 1 Master (CD)", "IDE 1 Slave")
 ATA_CD_SLOT = 2
 
 DRIVE_KINDS = ("disk", "cdrom")
-FORMATS = ("raw", "qcow2")
 
 
 def ata_slot_name(i: int) -> str:

@@ -206,6 +206,52 @@ def default_audio_label(platform: str = HOST_PLATFORM) -> str:
     return AUDIO_BACKEND_LABELS.get(backend, backend)
 
 
+# ------------------------------------------------------------ image formats
+
+FORMATS = ("raw", "qcow2")
+
+# QEMU probes an image by its magic number; do the same, so an existing file
+# picked in the editor is described correctly instead of always as "raw".
+FORMAT_MAGIC = ((b"QFI\xfb", "qcow2"),
+                (b"KDMV", "vmdk"),
+                (b"conectix", "vpc"),
+                (b"<<< Oracle VM VirtualBox Disk Image", "vdi"))
+FORMAT_BY_SUFFIX = {".qcow2": "qcow2", ".qcow": "qcow2", ".vmdk": "vmdk",
+                    ".vdi": "vdi", ".vhd": "vpc", ".vhdx": "vpc"}
+MAGIC_LENGTH = max(len(magic) for magic, _ in FORMAT_MAGIC)
+
+
+def detect_format(path: str) -> str:
+    """The format of an image file: its magic number, else its name. Anything
+    unknown, missing, unreadable or not offered here answers "raw". Never raises."""
+    p = str(path or "")
+    name = FORMAT_BY_SUFFIX.get(Path(p).suffix.lower(), "raw")
+    try:
+        with open(p, "rb") as fh:
+            head = fh.read(MAGIC_LENGTH)
+    except OSError:
+        return "raw"
+    for magic, fmt in FORMAT_MAGIC:
+        if head.startswith(magic):
+            name = fmt
+            break
+    return name if name in FORMATS else "raw"
+
+
+def drive_format(stored: str, file: str, base: str) -> str:
+    """The format QEMU is told. A stored non-raw value is somebody's own
+    choice and stands; a stored "raw" is checked against the file, because
+    every record saved before detection existed says "raw"."""
+    fmt = (stored or "").strip()
+    if fmt and fmt != "raw":
+        return fmt
+    # the file lives on this host, whatever platform the launcher is for
+    p = join_path(base, file, HOST_PLATFORM)
+    if not os.path.isfile(p):
+        return "raw"
+    return detect_format(p)
+
+
 def sudo_applies(needs_sudo: bool, platform: str = HOST_PLATFORM) -> bool:
     """vmnet-* launchers run the binary under sudo (macOS only; never in a
     .bat)."""
