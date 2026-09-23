@@ -12,6 +12,7 @@ import shlex
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -855,6 +856,18 @@ class ImageFormatDetection(unittest.TestCase):
     def test_missing_file_is_raw(self):
         self.assertEqual(model.detect_format(str(self.dir / "nothing.qcow2")), "raw")
         self.assertEqual(model.detect_format(str(self.dir / "nothing.img")), "raw")
+
+    def test_a_file_that_cannot_be_read_now_keeps_its_name(self):
+        p = self._image("locked.qcow2", b"QFI\xfb\x00\x00\x00\x03")
+        opened = open
+
+        def denied(name, *a, **kw):
+            if str(name) == str(p):
+                raise PermissionError(13, "in use")
+            return opened(name, *a, **kw)
+
+        with unittest.mock.patch("builtins.open", denied):
+            self.assertEqual(model.detect_format(str(p)), "qcow2")
 
     def test_an_unreadable_path_never_raises(self):
         self.assertEqual(model.detect_format(str(self.dir)), "raw")

@@ -223,14 +223,18 @@ MAGIC_LENGTH = max(len(magic) for magic, _ in FORMAT_MAGIC)
 
 def detect_format(path: str) -> str:
     """The format of an image file: its magic number, else its name. Anything
-    unknown, missing, unreadable or not offered here answers "raw". Never raises."""
+    unknown, missing or not offered here answers "raw". Never raises."""
     p = str(path or "")
     name = FORMAT_BY_SUFFIX.get(Path(p).suffix.lower(), "raw")
     try:
         with open(p, "rb") as fh:
             head = fh.read(MAGIC_LENGTH)
     except OSError:
-        return "raw"
+        # A file that is there but unreadable right now, because Windows
+        # locks a running machine's image, is still its name's format.
+        if not Path(p).exists():
+            return "raw"
+        head = b""
     for magic, fmt in FORMAT_MAGIC:
         if head.startswith(magic):
             name = fmt
