@@ -14,6 +14,7 @@ from . import mac99_command as command
 from . import mac99_model as model
 from . import mac99_share as share
 from . import paths
+from . import winusb
 from .mac99_model import Machine, Library
 from .paths import Settings
 from .mac99_ui_dialogs import (ask_name, confirm_delete, confirm_reset_saved_settings, open_folder,
@@ -88,13 +89,24 @@ def start_in_terminal(m: Machine, machine_dir: Path) -> tuple[Path, share.ShareS
     return launcher, share_server
 
 
+def usb_owned(m: Machine) -> tuple[set | None, str]:
+    """Windows: the ticked devices' ownership now, from winusb-switch list,
+    and a note on what is left out. (None, "") anywhere else."""
+    if not paths.is_windows(paths.HOST_PLATFORM) or not m.usb_host_devices:
+        return None, ""
+    owned, why = winusb.owned_ids()
+    return owned, winusb.passthrough_note([u.id for u in m.usb_host_devices], owned, why)
+
+
 def start_machine(m: Machine, machine_dir: Path) -> RunningMachine:
     """Write the launcher, start the shared folder, then run the launcher
     with the machine folder as the working directory, keeping everything
     it prints in last-run.log."""
     machine_dir = Path(machine_dir)
     machine_dir.mkdir(parents=True, exist_ok=True)
-    launcher, argv = command.write_launcher(m, qemu_dir(), str(machine_dir), paths.HOST_PLATFORM)
+    owned, _note = usb_owned(m)
+    launcher, argv = command.write_launcher(m, qemu_dir(), str(machine_dir), paths.HOST_PLATFORM,
+                                            owned)
     log_path = machine_dir / LOG_NAME
     log_path.write_text("# " + " ".join(argv) + "\n", encoding="utf-8")
     windows = paths.is_windows(paths.HOST_PLATFORM)
@@ -291,10 +303,14 @@ class MainWindow(tk.Tk):
             self.run_status.config(text="")
             return
         folder = self.library.folder(m.name)
+        owned, note = usb_owned(m)
         try:
-            text = command.launcher_text(m, qemu_dir(), str(folder))
+            text = command.launcher_text(m, qemu_dir(), str(folder), paths.HOST_PLATFORM,
+                                         owned)
         except Exception as e:
             text = f"({e})"
+        if note:
+            text += f"\n({note})\n"
         self._set_text(self.command_line, text)
         self._show_notes(m.name, m.notes)
         self._refresh_run_status(m.name)
@@ -393,7 +409,9 @@ class MainWindow(tk.Tk):
 
     def _write_launcher(self, m: Machine):
         try:
-            command.write_launcher(m, qemu_dir(), str(self.library.folder(m.name)))
+            owned, _note = usb_owned(m)
+            command.write_launcher(m, qemu_dir(), str(self.library.folder(m.name)),
+                                   paths.HOST_PLATFORM, owned)
         except OSError as e:
             messagebox.showerror(APP_TITLE, f"The start-up file could not be written.\n\n{e}")
 

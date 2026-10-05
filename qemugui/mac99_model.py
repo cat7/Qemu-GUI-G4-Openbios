@@ -279,6 +279,37 @@ class PromEnv:
                    str(d.get("boot_device", "")), str(d.get("boot_args", "")))
 
 
+USB_ID_RE = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{4}$")
+
+
+@dataclass
+class UsbHostDevice:
+    """A host USB device this machine takes, by vendor:product id (lower-case
+    hex); the speed picks the bus."""
+    id: str = ""
+    name: str = ""
+    speed: str = ""
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "name": self.name, "speed": self.speed}
+
+    @classmethod
+    def from_dict(cls, d: Any) -> "UsbHostDevice | None":
+        if not isinstance(d, dict):
+            return None
+        return cls(str(d.get("id", "") or "").strip().lower(), str(d.get("name", "") or ""),
+                   str(d.get("speed", "") or ""))
+
+
+def usb_host_devices_from(value: Any) -> list[UsbHostDevice]:
+    out: list[UsbHostDevice] = []
+    for x in value if isinstance(value, list) else []:
+        dev = UsbHostDevice.from_dict(x)
+        if dev and dev.id and all(dev.id != o.id for o in out):
+            out.append(dev)
+    return out
+
+
 SHARE_SCOPES = ("guest-only", "all-interfaces")
 SHARE_DEFAULT_USER = "guest"
 
@@ -328,6 +359,7 @@ class Machine:
     usb_storage: list = field(default_factory=list)
     prom_env: PromEnv = field(default_factory=PromEnv)
     share: Share = field(default_factory=Share)
+    usb_host_devices: list = field(default_factory=list)   # [UsbHostDevice]
     rtc_base: str = ""
     extra_args: str = ""
     notes: str = ""
@@ -351,6 +383,7 @@ class Machine:
             "usb_storage": [u.to_dict() for u in self.usb_storage],
             "prom_env": self.prom_env.to_dict(),
             "share": self.share.to_dict(),
+            "usb_host_devices": [u.to_dict() for u in self.usb_host_devices],
             "rtc_base": self.rtc_base,
             "extra_args": self.extra_args,
             "notes": self.notes,
@@ -382,6 +415,7 @@ class Machine:
             usb_storage=usb,
             prom_env=PromEnv.from_dict(d.get("prom_env")),
             share=Share.from_dict(d.get("share")),
+            usb_host_devices=usb_host_devices_from(d.get("usb_host_devices")),
             rtc_base=str(d.get("rtc_base", "") or ""),
             extra_args=str(d.get("extra_args", "")),
             notes=str(d.get("notes", "")),
@@ -534,6 +568,12 @@ def validate(m: Machine, qemu_dir: str | None, platform: str = paths.HOST_PLATFO
             errors.append("Sharing on all interfaces needs a password.")
         if share.scope == "guest-only" and net.mode != "user":
             warnings.append("Guest only sharing is only reachable with default (slirp).")
+
+    for u in m.usb_host_devices:
+        if not USB_ID_RE.match(u.id):
+            errors.append(f"'{u.id}' is not a USB device id like 046d:0990.")
+    if m.usb_host_devices and platform != "darwin" and not paths.is_windows(platform):
+        warnings.append("Host USB devices only work on a Mac or on Windows.")
 
     if check_files:
         qd = qemu_dir or ""

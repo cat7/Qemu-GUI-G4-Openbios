@@ -22,6 +22,7 @@ from . import paths
 from .paths import (qopt, split_extra_args, group_options, bat_quote, drive_format,
                     SUDO_KEEPALIVE)  # re-exported
 from . import mac99_model as model
+from . import usbhost
 from .mac99_model import Machine
 
 HEADER_NOTE = "Written by Qemu-system-ppc Mac99 openbios GUI. Do not edit."
@@ -38,7 +39,10 @@ def _path(p: str, base: str, platform: str) -> str:
 
 
 def machine_option(m: Machine) -> str:
-    return f"{m.machine},via={m.via}"
+    opt = f"{m.machine},via={m.via}"
+    if m.usb_host_devices:
+        opt += ",nec-usb=on"
+    return opt
 
 
 def nic_option(net) -> str:
@@ -58,7 +62,10 @@ def nic_option(net) -> str:
 
 
 def needs_sudo(m: Machine, platform: str = paths.HOST_PLATFORM) -> bool:
-    return paths.sudo_applies(m.network.needs_sudo, platform)
+    """vmnet, and QEMU's usb-host, which takes a device from macOS only as
+    root."""
+    usb = platform == "darwin" and bool(m.usb_host_devices)
+    return paths.sudo_applies(m.network.needs_sudo or usb, platform)
 
 
 def prom_env_tokens(m: Machine) -> list[str]:
@@ -76,8 +83,10 @@ def prom_env_tokens(m: Machine) -> list[str]:
 
 
 def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
-               platform: str = paths.HOST_PLATFORM) -> list[str]:
-    """The complete argv, first token = absolute path of the QEMU binary."""
+               platform: str = paths.HOST_PLATFORM, owned=None) -> list[str]:
+    """The complete argv, first token = absolute path of the QEMU binary.
+    *owned*: on Windows, the ids of the devices QEMU owns now (on WinUSB);
+    only those of the ticked devices are passed through, none without it."""
     qd = qemu_dir
     argv: list[str] = [paths.join_path(qd, paths.qemu_binary_name(platform), platform)]
 
@@ -143,6 +152,11 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
     argv += ["-global", "macio-nvram.drive=nvr"]
 
     argv += prom_env_tokens(m)
+    if platform == "darwin":
+        argv += usbhost.qemu_tokens([(u.id, u.speed) for u in m.usb_host_devices])
+    elif paths.is_windows(platform) and owned:
+        argv += usbhost.qemu_tokens([(u.id, u.speed) for u in m.usb_host_devices
+                                     if u.id in owned])
     if m.rtc_base.strip():
         argv += ["-rtc", f"base={m.rtc_base.strip()}"]
     argv += extra
@@ -173,19 +187,19 @@ def render_launcher(argv: list[str], platform: str = paths.HOST_PLATFORM, sudo: 
 
 
 def launcher_text(m: Machine, qemu_dir: str, machine_dir: str,
-                  platform: str = paths.HOST_PLATFORM) -> str:
-    return render_launcher(build_argv(m, qemu_dir, machine_dir, platform), platform,
+                  platform: str = paths.HOST_PLATFORM, owned=None) -> str:
+    return render_launcher(build_argv(m, qemu_dir, machine_dir, platform, owned), platform,
                            needs_sudo(m, platform), extra_count(m, platform), m.name)
 
 
 def write_launcher(m: Machine, qemu_dir: str, machine_dir: str,
-                   platform: str = paths.HOST_PLATFORM):
+                   platform: str = paths.HOST_PLATFORM, owned=None):
     from pathlib import Path
     import os
     import stat
     from .mac99_model import ensure_nvram_file
     ensure_nvram_file(machine_dir)
-    argv = build_argv(m, qemu_dir, machine_dir, platform)
+    argv = build_argv(m, qemu_dir, machine_dir, platform, owned)
     text = render_launcher(argv, platform, needs_sudo(m, platform), extra_count(m, platform),
                            m.name)
     path = Path(machine_dir) / paths.launcher_name(platform)

@@ -12,12 +12,15 @@ Same two rules as the g3beige editor (qemugui/ui_machine.py):
 from __future__ import annotations
 
 import tkinter as tk
+import threading
 from pathlib import Path
 from tkinter import ttk, filedialog, messagebox
 
 from . import paths
+from . import usbhost
+from . import winusb
 from . import mac99_model as model
-from .mac99_model import Machine, AtaDrive, Gpu, Network, PromEnv, UsbStorage, Share
+from .mac99_model import Machine, AtaDrive, Gpu, Network, PromEnv, UsbStorage, Share, UsbHostDevice
 from .mac99_ui_dialogs import show_validation, refresh_native_style, CreateDiskDialog
 
 KIND_LABELS = {"": "Empty", "disk": "Hard disk", "cdrom": "CD"}
@@ -133,6 +136,8 @@ class MachineEditor(tk.Toplevel):
     checking. With ``is_new`` the same window opens empty; nothing exists on
     disk until Save."""
 
+    _usb_win = False
+
     def __init__(self, parent, machine: Machine, library: model.Library, qemu_dir: str, on_save,
                 is_new: bool = False):
         super().__init__(parent)
@@ -154,6 +159,10 @@ class MachineEditor(tk.Toplevel):
         self._build_drives()
         self._build_net_audio()
         self._build_share()
+        if paths.HOST_PLATFORM == "darwin":
+            self._build_usb_host()
+        elif paths.is_windows(paths.HOST_PLATFORM):
+            self._build_usb_host_win()
         self._build_advanced()
 
         bar = ttk.Frame(self)
@@ -370,6 +379,217 @@ class MachineEditor(tk.Toplevel):
         if d:
             self.share_folder_var.set(d)
 
+    def _build_usb_host(self):
+        f = self._tab("USB devices")
+        f.columnconfigure(0, weight=1)
+        f.rowconfigure(1, weight=1)
+        ttk.Label(f, text="Host USB devices this Mac takes while it runs. With any device "
+                          "ticked the machine starts with sudo and asks for your password. "
+                          "High-speed devices go on the USB 2.0 bus, others on the second "
+                          "USB 1.1 bus.",
+                  foreground=GREY, wraplength=EDITOR_WIDTH - 60, justify="left").grid(
+            row=0, column=0, sticky="ew", pady=(0, 6))
+        self.usb_host_list = ttk.Frame(f)
+        self.usb_host_list.grid(row=1, column=0, sticky="nsew")
+        self.usb_host_vars: dict[str, tk.BooleanVar] = {}
+        self.usb_host_info: dict[str, UsbHostDevice] = {}
+        self.usb_host_boxes: dict[str, ttk.Checkbutton] = {}
+
+    def _fill_usb_host(self, chosen: list[UsbHostDevice]):
+        if self._usb_win:
+            self._fill_usb_host_win(chosen)
+            return
+        for w in self.usb_host_list.winfo_children():
+            w.destroy()
+        picked = {u.id: u for u in chosen}
+        plugged: dict[str, usbhost.HostDevice] = {}
+        for d in usbhost.host_devices():
+            plugged.setdefault(d.id, d)
+        self.usb_host_vars = {}
+        self.usb_host_info = {}
+        self.usb_host_boxes = {}
+        hidden = [i for i, d in plugged.items() if not d.passable]
+        rows = [i for i in plugged if i not in hidden] + \
+               [i for i in picked if i not in plugged]
+        if not rows:
+            ttk.Label(self.usb_host_list, text="No USB device is plugged in.",
+                      foreground=GREY).grid(row=0, column=0, sticky="w")
+        self.usb_hidden_label = ttk.Label(self.usb_host_list,
+                                          text=usbhost.hidden_note(len(hidden)),
+                                          foreground=GREY)
+        self.usb_hidden_label.grid(row=len(rows) + 1, column=0, sticky="w",
+                                   pady=(6, 0))
+        for r, dev_id in enumerate(rows):
+            d = plugged.get(dev_id)
+            if d is not None:
+                name = d.name or (picked[dev_id].name if dev_id in picked else "")
+                info = UsbHostDevice(dev_id, name, d.speed)
+                text = f"{name or d.label}  ({dev_id}, {d.speed or '?'} speed)"
+                if not d.passable:
+                    text += f" -- {d.reason}"
+            else:
+                info = picked[dev_id]
+                text = (f"{info.name or 'USB device ' + dev_id}  ({dev_id}, "
+                        f"{info.speed or '?'} speed) -- not connected")
+            refused = d is not None and not d.passable
+            var = tk.BooleanVar(value=dev_id in picked and not refused)
+            box = ttk.Checkbutton(self.usb_host_list, text=text, variable=var)
+            box.grid(row=r, column=0, sticky="w")
+            if refused:
+                box.state(["disabled"])
+            self.usb_host_vars[dev_id] = var
+            self.usb_host_info[dev_id] = info
+            self.usb_host_boxes[dev_id] = box
+
+    def _collect_usb_host(self) -> list[UsbHostDevice]:
+        return [self.usb_host_info[i] for i, v in self.usb_host_vars.items() if v.get()]
+
+    # Windows: QEMU opens only devices on WinUSB; winusb-switch moves them.
+
+    def _build_usb_host_win(self):
+        f = self._tab("USB devices")
+        f.columnconfigure(0, weight=1)
+        f.rowconfigure(1, weight=1)
+        ttk.Label(f, text="Host USB devices this machine takes while it runs. QEMU can use a "
+                          "device only while it is on Windows' WinUSB driver: Give to QEMU puts "
+                          "it there, Give back to Windows returns it; each asks once for "
+                          "administrator rights. High-speed devices go on the USB 2.0 bus, "
+                          "others on the second USB 1.1 bus.",
+                  foreground=GREY, wraplength=EDITOR_WIDTH - 60, justify="left").grid(
+            row=0, column=0, sticky="ew", pady=(0, 6))
+        self.usb_host_list = ttk.Frame(f)
+        self.usb_host_list.grid(row=1, column=0, sticky="nsew")
+        self.usb_status = ttk.Label(f, text="", wraplength=EDITOR_WIDTH - 60, justify="left")
+        self.usb_status.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+        self._usb_win = True
+        self.usb_busy = False
+        self.usb_host_vars: dict[str, tk.BooleanVar] = {}
+        self.usb_host_info: dict[str, UsbHostDevice] = {}
+        self.usb_host_boxes: dict[str, ttk.Checkbutton] = {}
+        self.usb_host_notes: dict[str, ttk.Label] = {}
+        self.usb_host_buttons: dict[str, tuple[ttk.Button, ttk.Button]] = {}
+        self.usb_host_plugged: dict[str, winusb.WinDevice] = {}
+
+    def _fill_usb_host_win(self, chosen: list[UsbHostDevice]):
+        lst = self.usb_host_list
+        for w in lst.winfo_children():
+            w.destroy()
+        picked = {u.id: u for u in chosen}
+        devices, problem = winusb.list_devices()
+        plugged: dict[str, winusb.WinDevice] = {}
+        for d in devices:
+            plugged.setdefault(d.id, d)
+        self.usb_host_plugged = plugged
+        self.usb_host_vars = {}
+        self.usb_host_info = {}
+        self.usb_host_boxes = {}
+        self.usb_host_notes = {}
+        self.usb_host_buttons = {}
+        # Refused devices stay out, unless one is on WinUSB and can go back
+        hidden = [i for i, d in plugged.items() if d.refuse and not d.winusb]
+        rows = [i for i in plugged if i not in hidden] + \
+               [i for i in picked if i not in plugged]
+        self.usb_hidden_label = ttk.Label(lst, text=usbhost.hidden_note(len(hidden)),
+                                          foreground=GREY)
+        self.usb_hidden_label.grid(row=2 * len(rows) + 2, column=0, columnspan=3,
+                                   sticky="w", pady=(6, 0))
+        # UsbDk, libusbK, libusb0: may keep devices from their Windows drivers
+        self.usb_warning_label = ttk.Label(lst, text=winusb.warnings_text(devices),
+                                           foreground="red", wraplength=EDITOR_WIDTH - 60,
+                                           justify="left")
+        self.usb_warning_label.grid(row=2 * len(rows) + 3, column=0, columnspan=3,
+                                    sticky="w")
+        if problem:
+            ttk.Label(lst, text=problem, foreground=GREY).grid(row=0, column=0, columnspan=3,
+                                                               sticky="w")
+        elif not rows:
+            ttk.Label(lst, text="No USB device is plugged in.",
+                      foreground=GREY).grid(row=0, column=0, sticky="w")
+        for n, dev_id in enumerate(rows):
+            r = 1 + 2 * n
+            d = plugged.get(dev_id)
+            p = picked.get(dev_id)
+            if d is not None:
+                name = d.product or d.description or (p.name if p else "")
+                info = UsbHostDevice(dev_id, name, d.speed or (p.speed if p else ""))
+                text = f"{name or d.label}  ({dev_id}, {d.speed or '?'} speed) -- {d.state}"
+                if d.refuse:
+                    text += f" -- {d.refuse}"
+            else:
+                info = p
+                text = (f"{info.name or 'USB device ' + dev_id}  ({dev_id}, "
+                        f"{info.speed or '?'} speed) -- not connected")
+            refused = d is not None and bool(d.refuse)
+            # A saved tick stays even while Windows owns the device
+            var = tk.BooleanVar(value=dev_id in picked and not refused)
+            box = ttk.Checkbutton(lst, text=text, variable=var)
+            box.grid(row=r, column=0, sticky="w")
+            give = ttk.Button(lst, text="Give to QEMU",
+                              command=lambda i=dev_id: self._usb_switch("bind", i))
+            back = ttk.Button(lst, text="Give back to Windows",
+                              command=lambda i=dev_id: self._usb_switch("unbind", i))
+            give.grid(row=r, column=1, padx=2)
+            back.grid(row=r, column=2, padx=2)
+            note = ttk.Label(lst, text="", foreground=GREY)
+            note.grid(row=r + 1, column=0, columnspan=3, sticky="w")
+            # Only a device QEMU owns (on WinUSB) can be ticked
+            if refused or (d is not None and not d.winusb):
+                box.state(["disabled"])
+            if refused or d is None or d.winusb:
+                give.state(["disabled"])
+            if d is None or not d.winusb:      # a refused one may still go back
+                back.state(["disabled"])
+            self.usb_host_vars[dev_id] = var
+            self.usb_host_info[dev_id] = info
+            self.usb_host_boxes[dev_id] = box
+            self.usb_host_notes[dev_id] = note
+            self.usb_host_buttons[dev_id] = (give, back)
+            var.trace_add("write", lambda *_a, i=dev_id: self._usb_note(i))
+            self._usb_note(dev_id)
+
+    def _usb_note(self, dev_id: str):
+        d = self.usb_host_plugged.get(dev_id)
+        waiting = self.usb_host_vars[dev_id].get() and d is not None and not d.winusb
+        self.usb_host_notes[dev_id].config(text=f"    {winusb.NOT_READY_NOTE}" if waiting else "")
+
+    def _usb_switch(self, op: str, dev_id: str, wait: bool = False):
+        """Run winusb-switch elevated for one device; *wait* runs it in line
+        (tests), otherwise on a thread so the window stays alive."""
+        if self.usb_busy:
+            return
+        self.usb_busy = True
+        self.usb_status.config(text="Waiting for the administrator prompt ...")
+        for give, back in self.usb_host_buttons.values():
+            give.state(["disabled"])
+            back.state(["disabled"])
+        if wait:
+            self._usb_switched(winusb.run_elevated(op, dev_id))
+            return
+        box: dict = {}
+        worker = threading.Thread(
+            target=lambda: box.setdefault("res", winusb.run_elevated(op, dev_id)), daemon=True)
+        worker.start()
+
+        def poll():
+            try:
+                if worker.is_alive():
+                    self.after(200, poll)
+                    return
+                self._usb_switched(box.get("res") or
+                                   {"op": op, "id": dev_id, "ok": False, "error": "no result"})
+            except tk.TclError:
+                pass        # the editor was closed meanwhile
+        self.after(200, poll)
+
+    def _usb_switched(self, res: dict):
+        self.usb_busy = False
+        self._fill_usb_host_win(self._collect_usb_host())
+        self.usb_status.config(text=winusb.outcome_text(res))
+        # The main window's command line follows the new ownership
+        refresh = getattr(self.master, "refresh_details", None)
+        if callable(refresh):
+            refresh()
+
     def _build_advanced(self):
         f = self._tab("Advanced")
         f.columnconfigure(1, weight=1)
@@ -443,6 +663,8 @@ class MachineEditor(tk.Toplevel):
         self.boot_args_var.set(m.prom_env.boot_args)
         self.rtc_base_var.set(m.rtc_base)
         self.extra_var.set(m.extra_args)
+        if hasattr(self, "usb_host_list"):
+            self._fill_usb_host(m.usb_host_devices)
 
     def collect(self) -> Machine:
         m = self.machine.copy()
@@ -472,6 +694,8 @@ class MachineEditor(tk.Toplevel):
                              self.boot_device_var.get().strip(), self.boot_args_var.get().strip())
         m.rtc_base = self.rtc_base_var.get().strip()
         m.extra_args = self.extra_var.get().strip()
+        if hasattr(self, "usb_host_list"):
+            m.usb_host_devices = self._collect_usb_host()
         return m
 
     def save(self):
