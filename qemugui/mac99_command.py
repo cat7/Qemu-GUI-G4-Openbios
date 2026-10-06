@@ -64,10 +64,10 @@ def nic_option(net) -> str:
 
 
 def needs_sudo(m: Machine, platform: str = paths.HOST_PLATFORM) -> bool:
-    """vmnet, and QEMU's usb-host, which takes a device from macOS only as
+    """vmnet, host forward ports below 1024, and QEMU's usb-host, which takes a device from macOS only as
     root."""
     usb = platform == "darwin" and bool(m.usb_host_devices)
-    return paths.sudo_applies(m.network.needs_sudo or usb, platform)
+    return paths.sudo_applies(m.network.needs_sudo or m.network.low_host_port or usb, platform)
 
 
 def prom_env_tokens(m: Machine) -> list[str]:

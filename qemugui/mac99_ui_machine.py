@@ -434,7 +434,8 @@ class MachineEditor(tk.Toplevel):
         ttk.Label(ff, text="Port forwarding", font=("", 0, "bold")).grid(
             row=0, column=0, columnspan=5, sticky="w")
         ttk.Label(ff, text="Forward a port on this Mac to the guest: host 8080 -> guest 80. "
-                           "Default (slirp) only; host ports below 1024 can need root.",
+                           "Default (slirp) only." + ("" if paths.is_windows(paths.HOST_PLATFORM) else
+                                                   " Host ports below 1024 start the machine with sudo."),
                   foreground=GREY, wraplength=640, justify="left").grid(
             row=1, column=0, columnspan=5, sticky="w", pady=(0, 4))
         for c, t in enumerate(("Protocol", "Host port", "Guest port")):

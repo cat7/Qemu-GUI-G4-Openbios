@@ -318,6 +318,13 @@ class Network:
         return self.mode.startswith("vmnet-")
 
     @property
+    def low_host_port(self) -> bool:
+        """Slirp with a non-empty forward whose host port is below 1024."""
+        return self.mode == "user" and any(
+            not r.empty and str(r.host_port).strip().isdigit() and 0 < int(r.host_port) < 1024
+            for r in self.hostfwd)
+
+    @property
     def platform(self) -> str | None:
         return NETWORK_MODE_PLATFORM.get(self.mode)
 
@@ -594,7 +601,6 @@ def validate(m: Machine, qemu_dir: str | None, platform: str = paths.HOST_PLATFO
             errors.append("The card address has to look like 00:05:02:12:34:56.")
         if net.mode in NETWORK_MODES_WITH_IFNAME and not net.ifname.strip():
             errors.append("No interface named.")
-        low = False
         for r in net.hostfwd:
             if r.empty:
                 continue
@@ -602,11 +608,6 @@ def validate(m: Machine, qemu_dir: str | None, platform: str = paths.HOST_PLATFO
                 errors.append(f"'{r.proto}' is not a forwarding protocol.")
             if not (_port_ok(r.host_port) and _port_ok(r.guest_port)):
                 errors.append("Port forwarding needs host and guest ports from 1 to 65535.")
-            elif int(r.host_port) < 1024:
-                low = True
-        if low and net.mode == "user" and not paths.is_windows(platform) \
-                and not (platform == "darwin" and m.usb_host_devices):
-            warnings.append("Host ports below 1024 can need root; this machine does not start with sudo (vmnet or USB devices do).")
         host = "win32" if paths.is_windows(platform) else platform
         if net.platform is not None and net.platform != host:
             warnings.append("This network setting only works on "
