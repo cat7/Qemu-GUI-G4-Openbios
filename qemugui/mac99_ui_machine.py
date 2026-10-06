@@ -495,7 +495,8 @@ class MachineEditor(tk.Toplevel):
         ttk.Label(f, text="Host USB devices this Mac takes while it runs. With any device "
                           "ticked the machine starts with sudo and asks for your password. "
                           "High-speed devices go on the USB 2.0 bus, others on the second "
-                          "USB 1.1 bus.",
+                          "USB 1.1 bus.\n"
+                          "USB 2.0 needs Mac OS X 10.2.8 or later. Older systems (Mac OS 9, OS X 10.0–10.2.7) only see USB 1.1, so a USB 2.0-only device will not work there. A device that also supports USB 1.1 can be forced to it by plugging it into a USB 1.1 hub on this Mac.",
                   foreground=GREY, wraplength=EDITOR_WIDTH - 60, justify="left").grid(
             row=0, column=0, sticky="ew", pady=(0, 6))
         self.usb_host_list = ttk.Frame(f)
@@ -563,7 +564,8 @@ class MachineEditor(tk.Toplevel):
                           "device only while it is on Windows' WinUSB driver: Give to QEMU puts "
                           "it there, Give back to Windows returns it; each asks once for "
                           "administrator rights. High-speed devices go on the USB 2.0 bus, "
-                          "others on the second USB 1.1 bus.",
+                          "others on the second USB 1.1 bus.\n"
+                          "USB 2.0 needs Mac OS X 10.2.8 or later. Older systems (Mac OS 9, OS X 10.0–10.2.7) only see USB 1.1, so a USB 2.0-only device will not work there. A device that also supports USB 1.1 can be forced to it by plugging it into a USB 1.1 hub on this Mac.",
                   foreground=GREY, wraplength=EDITOR_WIDTH - 60, justify="left").grid(
             row=0, column=0, sticky="ew", pady=(0, 6))
         self.usb_host_list = ttk.Frame(f)
