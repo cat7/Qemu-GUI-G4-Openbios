@@ -19,7 +19,7 @@ import sys
 from dataclasses import dataclass, asdict
 from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 
-APP_NAME = "Qemu-system-ppc Mac99 openbios GUI"
+APP_NAME = "Qemu-system-ppc G4 Openbios GUI"
 HOST_PLATFORM = sys.platform  # "darwin" | "win32" | "linux"
 
 MACHINES_DIR_NAME = "Machines"

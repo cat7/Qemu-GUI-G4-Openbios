@@ -20,7 +20,7 @@ from tkinter import ttk, messagebox, simpledialog
 from . import mac99_model as model
 from . import paths
 
-APP_NAME = "Qemu-system-ppc Mac99 openbios GUI"
+APP_NAME = "Qemu-system-ppc G4 Openbios GUI"
 DISK_SIZES = ("1", "2", "4", "8", "10", "20")
 
 

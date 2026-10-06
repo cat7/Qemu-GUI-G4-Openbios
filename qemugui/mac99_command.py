@@ -25,7 +25,7 @@ from . import mac99_model as model
 from . import usbhost
 from .mac99_model import Machine
 
-HEADER_NOTE = "Written by Qemu-system-ppc Mac99 openbios GUI. Do not edit."
+HEADER_NOTE = "Written by Qemu-system-ppc G4 Openbios GUI. Do not edit."
 
 # Kept for anything still reading command.AUDIO_DEFAULT directly; the
 # resolution itself goes through paths.resolve_audio.

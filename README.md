@@ -1,4 +1,4 @@
-# Qemu-system-ppc Mac99 openbios GUI
+# Qemu-system-ppc G4 Openbios GUI
 
 A portable launcher for the OpenBIOS `mac99` machine of the
 `smp-audio-usb` branch of `qemu-system-ppc` (github.com/cat7/qemu).
@@ -51,7 +51,7 @@ and not redistributable):
     /Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13 \
         -m PyInstaller --noconfirm Mac99GUI.spec
 
-Result: `dist/Qemu-system-ppc Mac99 openbios GUI.app`. Put it in the
+Result: `dist/Qemu-system-ppc G4 Openbios GUI.app`. Put it in the
 distribution folder that holds `qemu-system-ppc` and `pc-bios/`.
 
 ## Build on Windows
@@ -59,7 +59,7 @@ distribution folder that holds `qemu-system-ppc` and `pc-bios/`.
     pyinstaller --noconfirm Mac99GUI.spec
 
 `Mac99GUI.spec` targets `universal2` only on macOS; on Windows it produces
-a single windowed executable, `dist/Qemu-system-ppc Mac99 openbios GUI.exe`.
+a single windowed executable, `dist/Qemu-system-ppc G4 Openbios GUI.exe`.
 Put it alongside `qemu-system-ppc.exe`.
 
 USB switch helper, from `winusb/` with a 64-bit mingw-w64 cross compiler:

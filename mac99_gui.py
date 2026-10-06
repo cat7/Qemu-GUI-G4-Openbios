@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Qemu-system-ppc Mac99 openbios GUI: start an emulated OpenBIOS PowerMac.
+"""Qemu-system-ppc G4 Openbios GUI: start an emulated OpenBIOS PowerMac.
 
 Runs from the folder that holds qemu-system-ppc; machines live in a
 "Machines" folder next to it. Standard library only (tkinter).
@@ -33,7 +33,7 @@ def report_problem_on_screen(message: str) -> None:
     try:
         root = tk.Tk()
         root.withdraw()
-        messagebox.showerror("Qemu-system-ppc Mac99 openbios GUI", message)
+        messagebox.showerror("Qemu-system-ppc G4 Openbios GUI", message)
         root.destroy()
     except Exception:      # no display: the terminal message stands
         pass

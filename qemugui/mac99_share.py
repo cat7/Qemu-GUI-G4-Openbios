@@ -182,7 +182,7 @@ def start_share(m: Machine, log_path: Path | None = None, ports=PORTS,
     Handler.masquerade_address_map = {"127.0.0.1": GUEST_HOST_ADDR}
     Handler.passive_ports = PASSIVE_PORTS
     Handler.encoding = ENCODING
-    Handler.banner = "Qemu-system-ppc Mac99 openbios GUI shared folder"
+    Handler.banner = "Qemu-system-ppc G4 Openbios GUI shared folder"
 
     host = bind_host if bind_host is not None else _bind_host(share)
     server = None

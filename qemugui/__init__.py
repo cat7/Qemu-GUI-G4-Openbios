@@ -1,4 +1,4 @@
-"""Qemu-system-ppc Mac99 openbios GUI: a portable launcher for the QEMU
+"""Qemu-system-ppc G4 Openbios GUI: a portable launcher for the QEMU
 mac99 machine.
 
 Standard library only. ``mac99_command``, ``mac99_model`` and ``paths``

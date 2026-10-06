@@ -21,7 +21,7 @@ from .mac99_ui_dialogs import (ask_name, confirm_delete, confirm_reset_saved_set
                                refresh_native_style)
 from .mac99_ui_machine import MachineEditor
 
-APP_TITLE = "Qemu-system-ppc Mac99 openbios GUI"
+APP_TITLE = "Qemu-system-ppc G4 Openbios GUI"
 LOG_NAME = "last-run.log"
 
 # Defined by subprocess only on Windows; named here so the dispatch can be
