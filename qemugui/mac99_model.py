@@ -259,24 +259,59 @@ class Gpu:
         return GPU_LABELS.get(self.model, self.model)
 
 
+HOSTFWD_PROTOS = ("tcp", "udp")
+HOSTFWD_ROWS = 4
+
+
+@dataclass
+class HostFwd:
+    proto: str = "tcp"
+    host_port: str = ""
+    guest_port: str = ""
+
+    def to_dict(self) -> dict:
+        return {"proto": self.proto, "host_port": self.host_port, "guest_port": self.guest_port}
+
+    @classmethod
+    def from_dict(cls, d: Any) -> "HostFwd":
+        if not isinstance(d, dict):
+            return cls()
+        return cls(str(d.get("proto") or "tcp"), str(d.get("host_port") or "").strip(),
+                   str(d.get("guest_port") or "").strip())
+
+    @property
+    def empty(self) -> bool:
+        return not (self.host_port or self.guest_port)
+
+
+def _port_ok(text: str) -> bool:
+    return text.isascii() and text.isdigit() and 1 <= int(text) <= 65535
+
+
 @dataclass
 class Network:
     mode: str = "user"
     mac: str = DEFAULT_MAC
     ifname: str = ""
+    hostfwd: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
         d = {"mode": self.mode, "mac": self.mac}
         if self.mode in NETWORK_MODES_WITH_IFNAME or self.ifname:
             d["ifname"] = self.ifname
+        rules = [r.to_dict() for r in self.hostfwd if not r.empty]
+        if rules:
+            d["hostfwd"] = rules
         return d
 
     @classmethod
     def from_dict(cls, d: Any) -> "Network":
         if not isinstance(d, dict):
             return cls()
+        rules = d.get("hostfwd")
         return cls(str(d.get("mode", "user")), str(d.get("mac", DEFAULT_MAC)),
-                   str(d.get("ifname", "") or ""))
+                   str(d.get("ifname", "") or ""),
+                   [HostFwd.from_dict(r) for r in rules] if isinstance(rules, list) else [])
 
     @property
     def needs_sudo(self) -> bool:
@@ -559,6 +594,19 @@ def validate(m: Machine, qemu_dir: str | None, platform: str = paths.HOST_PLATFO
             errors.append("The card address has to look like 00:05:02:12:34:56.")
         if net.mode in NETWORK_MODES_WITH_IFNAME and not net.ifname.strip():
             errors.append("No interface named.")
+        low = False
+        for r in net.hostfwd:
+            if r.empty:
+                continue
+            if r.proto not in HOSTFWD_PROTOS:
+                errors.append(f"'{r.proto}' is not a forwarding protocol.")
+            if not (_port_ok(r.host_port) and _port_ok(r.guest_port)):
+                errors.append("Port forwarding needs host and guest ports from 1 to 65535.")
+            elif int(r.host_port) < 1024:
+                low = True
+        if low and net.mode == "user" and not paths.is_windows(platform) \
+                and not (platform == "darwin" and m.usb_host_devices):
+            warnings.append("Host ports below 1024 can need root; this machine does not start with sudo (vmnet or USB devices do).")
         host = "win32" if paths.is_windows(platform) else platform
         if net.platform is not None and net.platform != host:
             warnings.append("This network setting only works on "
