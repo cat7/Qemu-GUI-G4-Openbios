@@ -174,6 +174,7 @@ class MachineEditor(tk.Toplevel):
         self.bind("<Escape>", lambda _e: self.destroy())
         self.load(self.machine)
         self._size_window()
+        self._centre_on(parent)
         self.nb.select(0)
         self.name_entry.focus_set()
 
@@ -182,6 +183,22 @@ class MachineEditor(tk.Toplevel):
         height = min(self.winfo_reqheight(), max(400, self.winfo_screenheight() - 160))
         self.geometry(f"{EDITOR_WIDTH}x{height}")
         self.minsize(600, 380)
+
+    def _centre_on(self, parent):
+        self.update_idletasks()
+        w, h = self.winfo_width(), self.winfo_height()
+        if w <= 1 or h <= 1:
+            w, h = EDITOR_WIDTH, self.winfo_reqheight()
+        try:
+            top = parent.winfo_toplevel()
+            top.update_idletasks()
+            x = top.winfo_rootx() + (top.winfo_width() - w) // 2
+            y = top.winfo_rooty() + (top.winfo_height() - h) // 2
+        except tk.TclError:
+            return
+        x = max(0, min(x, self.winfo_screenwidth() - w))
+        y = max(0, min(y, self.winfo_screenheight() - h - 40))
+        self.geometry(f"{w}x{h}+{x}+{y}")
 
     def machine_folder(self) -> Path:
         name = self.name_var.get().strip() or self.old_name
