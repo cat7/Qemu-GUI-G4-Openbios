@@ -118,7 +118,11 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
         argv += ["-audiodev", f"{audio},id=usb", "-device", "usb-audio,audiodev=usb"]
 
     if m.gpu:
-        parts = ["ati-rage128-pro"]
+        parts = ["ati-radeon9800" if m.gpu.model == "radeon9800" else "ati-rage128-pro"]
+        if m.gpu.model == "radeon9800":
+            parts.append(f"gl={m.gpu.gl}")
+            if m.gpu.gl_api == "metal":
+                parts.append("gl-api=metal")
         if m.gpu.romfile:
             parts.append(f"romfile={qopt(_path(m.gpu.romfile, qd, platform))}")
         argv += ["-device", ",".join(parts)]

@@ -205,22 +205,42 @@ class UsbStorage:
         return cls(str(d.get("file", "")), str(d.get("format", "raw")))
 
 
+GPU_MODELS = ("rage128", "radeon9800")
+GPU_LABELS = {"rage128": "ATI Rage 128 Pro", "radeon9800": "ATI Radeon 9800"}
+GPU_ROMS = {"rage128": "ati_rage128pro_136_agp.rom", "radeon9800": "ati_radeon_9800xt_123.rom"}
+GL_MODES = ("off", "on", "fast")
+GL_APIS = ("gl", "metal")
+
+
 @dataclass
 class Gpu:
-    """The one graphics card this GUI offers. ``None`` on the machine means
-    the machine's own default VGA card runs instead (no ``-vga none``, no
-    ``-device``)."""
+    """The one graphics card this GUI offers, a Rage 128 Pro or a Radeon
+    9800. ``None`` on the machine means the machine's own default VGA card
+    runs instead (no ``-vga none``, no ``-device``). ``gl`` and ``gl_api``
+    are Radeon 9800 only; a record without ``model`` is a Rage 128 Pro."""
     romfile: str | None = None
+    model: str = "rage128"
+    gl: str = "fast"
+    gl_api: str = "gl"
 
     def to_dict(self) -> dict:
-        return {"romfile": self.romfile}
+        d = {"romfile": self.romfile}
+        if self.model != "rage128":
+            d.update({"model": self.model, "gl": self.gl, "gl_api": self.gl_api})
+        return d
 
     @classmethod
     def from_dict(cls, d: Any) -> "Gpu | None":
         if not isinstance(d, dict):
             return None
         rom = d.get("romfile")
-        return cls(str(rom) if rom else None)
+        mdl = str(d.get("model") or "rage128")
+        return cls(str(rom) if rom else None, mdl,
+                   str(d.get("gl") or "fast"), str(d.get("gl_api") or "gl"))
+
+    @property
+    def label(self) -> str:
+        return GPU_LABELS.get(self.model, self.model)
 
 
 @dataclass
@@ -572,6 +592,13 @@ def validate(m: Machine, qemu_dir: str | None, platform: str = paths.HOST_PLATFO
     for u in m.usb_host_devices:
         if not USB_ID_RE.match(u.id):
             errors.append(f"'{u.id}' is not a USB device id like 046d:0990.")
+    if m.gpu and m.gpu.model not in GPU_MODELS:
+        errors.append(f"'{m.gpu.model}' is not a graphics card.")
+    elif m.gpu and m.gpu.model == "radeon9800":
+        if m.gpu.gl not in GL_MODES:
+            errors.append(f"'{m.gpu.gl}' is not an OpenGL setting.")
+        if m.gpu.gl_api not in GL_APIS:
+            errors.append(f"'{m.gpu.gl_api}' is not an OpenGL API.")
     if m.usb_host_devices and platform != "darwin" and not paths.is_windows(platform):
         warnings.append("Host USB devices only work on a Mac or on Windows.")
 

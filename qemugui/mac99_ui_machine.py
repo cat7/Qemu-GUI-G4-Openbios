@@ -250,13 +250,38 @@ class MachineEditor(tk.Toplevel):
         ttk.Label(f, text="Graphics card", font=("", 0, "bold")).grid(
             row=1, column=0, columnspan=2, sticky="w", pady=(6, 4))
         self.gpu_on = tk.BooleanVar(value=False)
-        ttk.Checkbutton(f, text="ATI Rage 128 Pro", variable=self.gpu_on,
-                       command=self._gpu_changed).grid(row=2, column=0, columnspan=2, sticky="w")
+        ttk.Checkbutton(f, text="ATI graphics card", variable=self.gpu_on,
+                       command=self._gpu_changed).grid(row=2, column=0, sticky="w")
+        self.gpu_model_var = tk.StringVar(value=model.GPU_LABELS["rage128"])
+        self.gpu_model_cb = ttk.Combobox(
+            f, textvariable=self.gpu_model_var, state="readonly", width=20,
+            values=[model.GPU_LABELS[k] for k in model.GPU_MODELS])
+        self.gpu_model_cb.grid(row=2, column=1, sticky="w", padx=2)
+        self.gpu_model_cb.bind("<<ComboboxSelected>>", self._gpu_model_changed)
         ttk.Label(f, text="ROM:").grid(row=3, column=0, sticky="w", pady=(6, 0))
         self.gpu_rom_var = tk.StringVar()
         FilePicker(f, self.gpu_rom_var, ROM_TYPES, width=40,
                   fallback=lambda: self.qemu_dir).grid(row=3, column=1, sticky="ew", padx=2,
                                                        pady=(6, 0))
+        ttk.Label(f, text="OpenGL:").grid(row=7, column=0, sticky="w", pady=(6, 0))
+        self.gl_var = tk.StringVar(value="fast")
+        self.gl_cb = ttk.Combobox(f, textvariable=self.gl_var, values=list(model.GL_MODES),
+                                  state="readonly", width=8)
+        self.gl_cb.grid(row=7, column=1, sticky="w", padx=2, pady=(6, 0))
+        ttk.Label(f, text="API:").grid(row=8, column=0, sticky="w", pady=(6, 0))
+        self.gl_api_var = tk.StringVar(value="gl")
+        apis = list(model.GL_APIS) if paths.HOST_PLATFORM == "darwin" else ["gl"]
+        self.gl_api_cb = ttk.Combobox(f, textvariable=self.gl_api_var, values=apis,
+                                      state="readonly", width=8)
+        self.gl_api_cb.grid(row=8, column=1, sticky="w", padx=2, pady=(6, 0))
+        ttk.Label(f, text="Radeon 9800 only. off: software; on: host OpenGL, exact; "
+                          "fast: host OpenGL, fastest. metal: Apple GPU Macs only.",
+                  foreground="#6e6e73", wraplength=420, justify="left").grid(
+            row=9, column=0, columnspan=2, sticky="w")
+        ttk.Label(f, text="Best with Mac OS X 10.3.9, 10.4 or 10.5. Mac OS 9 has no "
+                          "driver for the Radeon 9800.",
+                  foreground="#6e6e73", wraplength=420, justify="left").grid(
+            row=10, column=0, columnspan=2, sticky="w")
 
         ttk.Separator(f).grid(row=4, column=0, columnspan=2, sticky="ew", pady=10)
         self.vnc_on = tk.BooleanVar(value=False)
@@ -282,6 +307,26 @@ class MachineEditor(tk.Toplevel):
         starting point -- the Advanced tab's checkbox can still be changed
         by hand afterwards."""
         self.no_vga_driver_var.set(self.gpu_on.get())
+        self._gpu_model_changed(set_rom=False)
+
+    def _gpu_model_changed(self, _e=None, set_rom=True):
+        """Switching card swaps in that card's usual ROM, unless the field
+        holds something of the person's own; the GL options only apply to
+        the Radeon 9800."""
+        key = self._gpu_key()
+        on = self.gpu_on.get()
+        if set_rom and on:
+            cur = self.gpu_rom_var.get().strip()
+            if not cur or cur in model.GPU_ROMS.values():
+                self.gpu_rom_var.set(model.GPU_ROMS[key])
+        self.gpu_model_cb.state(["!disabled"] if on else ["disabled"])
+        gl = ["!disabled"] if on and key == "radeon9800" else ["disabled"]
+        self.gl_cb.state(gl)
+        self.gl_api_cb.state(gl)
+
+    def _gpu_key(self):
+        label = self.gpu_model_var.get()
+        return next((k for k, v in model.GPU_LABELS.items() if v == label), "rage128")
 
     def _build_drives(self):
         f = self._tab("Drives")
@@ -655,9 +700,14 @@ class MachineEditor(tk.Toplevel):
         if m.gpu:
             self.gpu_on.set(True)
             self.gpu_rom_var.set(m.gpu.romfile or "")
+            self.gpu_model_var.set(m.gpu.label)
+            self.gl_var.set(m.gpu.gl)
+            self.gl_api_var.set(m.gpu.gl_api)
         else:
             self.gpu_on.set(False)
             self.gpu_rom_var.set("")
+            self.gpu_model_var.set(model.GPU_LABELS["rage128"])
+        self._gpu_model_changed(set_rom=False)
         for i, row in enumerate(self.ata_rows):
             row.set_ata(m.ata[i] if i < len(m.ata) else None)
             row.boot.set(i == m.boot_slot)
@@ -697,7 +747,9 @@ class MachineEditor(tk.Toplevel):
         m.via = self.via_var.get()
         m.display = self.display_var.get()
         m.vnc = self.vnc_var.get().strip() if self.vnc_on.get() else ""
-        m.gpu = Gpu(self.gpu_rom_var.get().strip() or None) if self.gpu_on.get() else None
+        m.gpu = (Gpu(self.gpu_rom_var.get().strip() or None, self._gpu_key(),
+                     self.gl_var.get(), self.gl_api_var.get())
+                 if self.gpu_on.get() else None)
         m.ata = [row.get_ata() for row in self.ata_rows]
         m.boot_slot = next((i for i, row in enumerate(self.ata_rows) if row.boot.get()), None)
         mode = model.network_mode_by_label(self.net_mode.get())

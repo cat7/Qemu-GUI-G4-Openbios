@@ -189,6 +189,33 @@ class Options(unittest.TestCase):
         self.assertIn("ati-rage128-pro", argv)
         self.assertFalse(any("romfile" in t for t in argv))
 
+    def test_rage128_line_is_unchanged(self):
+        m = self.base()
+        m.gpu = Gpu("r.rom")
+        argv = command.build_argv(m, "/q", "/m", "darwin")
+        self.assertEqual(argv[argv.index("-device") + 1], "ati-rage128-pro,romfile=/q/r.rom")
+
+    def test_radeon9800_line(self):
+        m = self.base()
+        m.gpu = Gpu("ati_radeon_9800xt_123.rom", "radeon9800")
+        argv = command.build_argv(m, "/q", "/m", "darwin")
+        self.assertIn("-vga", argv)
+        self.assertIn("ati-radeon9800,gl=fast,romfile=/q/ati_radeon_9800xt_123.rom", argv)
+        self.assertFalse(any("rage128" in t for t in argv))
+        self.assertFalse(any("addr=" in t for t in argv))
+        m.gpu = Gpu("x.rom", "radeon9800", "off", "metal")
+        argv = command.build_argv(m, "/q", "/m", "darwin")
+        self.assertIn("ati-radeon9800,gl=off,gl-api=metal,romfile=/q/x.rom", argv)
+
+    def test_old_gpu_record_loads_as_rage128(self):
+        g = Gpu.from_dict({"romfile": "a.rom"})
+        self.assertEqual((g.model, g.romfile), ("rage128", "a.rom"))
+        self.assertEqual(g.to_dict(), {"romfile": "a.rom"})
+
+    def test_radeon9800_record_round_trips(self):
+        g = Gpu("a.rom", "radeon9800", "on", "metal")
+        self.assertEqual(Gpu.from_dict(g.to_dict()), g)
+
     def test_nic_model_is_sungem(self):
         m = self.base()
         argv = command.build_argv(m, "/q", "/m", "darwin")

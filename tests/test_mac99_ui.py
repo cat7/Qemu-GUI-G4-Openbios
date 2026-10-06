@@ -111,6 +111,24 @@ class CheckboxPolarity(unittest.TestCase):
         self.assertFalse(ed.no_vga_driver_var.get())
         self.assertTrue(ed.collect().prom_env.vga_ndrv)
 
+    def test_radeon9800_choice_round_trips_through_the_editor(self):
+        m = Machine(name="t", gpu=Gpu("mine.rom", "radeon9800", "on", "gl"))
+        ed = self._editor(m)
+        self.assertEqual(ed.gpu_model_var.get(), "ATI Radeon 9800")
+        g = ed.collect().gpu
+        self.assertEqual((g.model, g.romfile, g.gl), ("radeon9800", "mine.rom", "on"))
+
+    def test_switching_card_swaps_the_default_rom_only(self):
+        m = Machine(name="t", gpu=Gpu("ati_rage128pro_136_agp.rom"))
+        ed = self._editor(m)
+        ed.gpu_model_var.set("ATI Radeon 9800")
+        ed._gpu_model_changed()
+        self.assertEqual(ed.gpu_rom_var.get(), "ati_radeon_9800xt_123.rom")
+        ed.gpu_rom_var.set("custom.rom")
+        ed.gpu_model_var.set("ATI Rage 128 Pro")
+        ed._gpu_model_changed()
+        self.assertEqual(ed.gpu_rom_var.get(), "custom.rom")
+
     def test_toggling_the_gpu_does_not_overrule_a_hand_set_checkbox(self):
         """Only the toggle sets a starting point; a person can still flip
         the checkbox back afterwards and it stays put."""
