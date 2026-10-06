@@ -1,7 +1,7 @@
 # Qemu-system-ppc G4 Openbios GUI
 
 A portable launcher for the OpenBIOS `mac99` machine of the
-`smp-audio-usb` branch of `qemu-system-ppc` (github.com/cat7/qemu).
+`G4-openbios` branch of `qemu-system-ppc` (github.com/cat7/qemu).
 OpenBIOS ships with it; no Apple ROM needed. The program must sit in the
 same folder as `qemu-system-ppc` (and `qemu-img`, `pc-bios/`).
 

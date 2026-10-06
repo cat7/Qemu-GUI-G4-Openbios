@@ -10,7 +10,7 @@ again): which display/network backends a given host offers, the audio
 backend "default" resolves to, and the .command/.bat launcher rendering --
 imported here, not reimplemented.
 
-Ground truth (verified in ``qemu-ppc-smp``, branch ``smp-audio-usb``, HEAD
+Ground truth (verified in ``qemu-ppc-smp``, branch ``G4-openbios``, HEAD
 ``4987ce252f``):
 
 * No SCSI: ``hw/ppc/mac_newworld.c`` instantiates no MESH/SCSI controller.
