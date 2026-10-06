@@ -43,6 +43,17 @@ def browse_file(parent, var: tk.StringVar, filetypes, fallback: Path | str | Non
     return ""
 
 
+def rom_value(path: str, qemu_dir: str) -> str:
+    """A ROM beside the emulator is kept by name, anything else by path."""
+    p = Path(path)
+    try:
+        if qemu_dir and p.parent.resolve() == Path(qemu_dir).resolve():
+            return p.name
+    except OSError:
+        pass
+    return path
+
+
 class FilePicker:
     def __init__(self, master, var: tk.StringVar, filetypes, width: int = 40, fallback=None,
                  on_pick=None):
@@ -248,50 +259,57 @@ class MachineEditor(tk.Toplevel):
                     width=10).grid(row=0, column=1, sticky="w", pady=(0, 8))
 
         ttk.Label(f, text="Graphics card", font=("", 0, "bold")).grid(
-            row=1, column=0, columnspan=2, sticky="w", pady=(6, 4))
+            row=1, column=0, columnspan=3, sticky="w", pady=(6, 4))
         self.gpu_on = tk.BooleanVar(value=False)
-        ttk.Checkbutton(f, text="ATI graphics card", variable=self.gpu_on,
-                       command=self._gpu_changed).grid(row=2, column=0, sticky="w")
+        ttk.Checkbutton(f, text="Use an ATI graphics card", variable=self.gpu_on,
+                       command=self._gpu_changed).grid(row=2, column=0, columnspan=3, sticky="w")
         self.gpu_model_var = tk.StringVar(value=model.GPU_LABELS["rage128"])
-        self.gpu_model_cb = ttk.Combobox(
-            f, textvariable=self.gpu_model_var, state="readonly", width=20,
-            values=[model.GPU_LABELS[k] for k in model.GPU_MODELS])
-        self.gpu_model_cb.grid(row=2, column=1, sticky="w", padx=2)
-        self.gpu_model_cb.bind("<<ComboboxSelected>>", self._gpu_model_changed)
-        ttk.Label(f, text="ROM:").grid(row=3, column=0, sticky="w", pady=(6, 0))
-        self.gpu_rom_var = tk.StringVar()
-        FilePicker(f, self.gpu_rom_var, ROM_TYPES, width=40,
-                  fallback=lambda: self.qemu_dir).grid(row=3, column=1, sticky="ew", padx=2,
-                                                       pady=(6, 0))
-        ttk.Label(f, text="OpenGL:").grid(row=7, column=0, sticky="w", pady=(6, 0))
+        self.rom_vars = {k: tk.StringVar() for k in model.GPU_MODELS}
+        self.gpu_radios, self.gpu_rom_cbs, self.gpu_rom_buttons = {}, {}, {}
+        hints = {"rage128": "For Mac OS 9", "radeon9800": "For Mac OS X 10.3 to 10.5 only"}
+        roms = model.roms_in(self.qemu_dir)
+        r = 3
+        for key in model.GPU_MODELS:
+            ttk.Label(f, text=hints[key], foreground="#6e6e73").grid(
+                row=r, column=0, columnspan=3, sticky="w", pady=(6, 0), padx=(22, 0))
+            rb = ttk.Radiobutton(f, text=model.GPU_LABELS[key], value=model.GPU_LABELS[key],
+                                 variable=self.gpu_model_var, command=self._gpu_model_changed)
+            rb.grid(row=r + 1, column=0, sticky="w")
+            cb = ttk.Combobox(f, textvariable=self.rom_vars[key], width=34, values=roms)
+            cb.grid(row=r + 1, column=1, sticky="ew", padx=2)
+            bt = ttk.Button(f, text="Choose\u2026", command=lambda k=key: self._choose_rom(k))
+            bt.grid(row=r + 1, column=2, sticky="w")
+            self.gpu_radios[key], self.gpu_rom_cbs[key], self.gpu_rom_buttons[key] = rb, cb, bt
+            if model.GPU_ROMS[key] in roms:
+                self.rom_vars[key].set(model.GPU_ROMS[key])
+            r += 2
+        # r == 7: OpenGL and Backend sit right under the Radeon 9800 row
+        ttk.Label(f, text="OpenGL:").grid(row=7, column=0, sticky="w", pady=(6, 0), padx=(22, 0))
         self.gl_var = tk.StringVar(value="fast")
         self.gl_cb = ttk.Combobox(f, textvariable=self.gl_var, values=list(model.GL_MODES),
                                   state="readonly", width=8)
         self.gl_cb.grid(row=7, column=1, sticky="w", padx=2, pady=(6, 0))
-        ttk.Label(f, text="API:").grid(row=8, column=0, sticky="w", pady=(6, 0))
+        self.gl_cb.bind("<<ComboboxSelected>>", self._gpu_model_changed)
+        ttk.Label(f, text="Backend:").grid(row=8, column=0, sticky="w", pady=(6, 0), padx=(22, 0))
         self.gl_api_var = tk.StringVar(value="gl")
         apis = list(model.GL_APIS) if paths.HOST_PLATFORM == "darwin" else ["gl"]
         self.gl_api_cb = ttk.Combobox(f, textvariable=self.gl_api_var, values=apis,
                                       state="readonly", width=8)
         self.gl_api_cb.grid(row=8, column=1, sticky="w", padx=2, pady=(6, 0))
-        ttk.Label(f, text="Radeon 9800 only. off: software; on: host OpenGL, exact; "
-                          "fast: host OpenGL, fastest. metal: Apple GPU Macs only.",
+        ttk.Label(f, text="off: software; on: host OpenGL, exact; fast: host OpenGL, "
+                          "fastest. metal: Apple GPU Macs only.",
                   foreground="#6e6e73", wraplength=420, justify="left").grid(
-            row=9, column=0, columnspan=2, sticky="w")
-        ttk.Label(f, text="Best with Mac OS X 10.3.9, 10.4 or 10.5. Mac OS 9 has no "
-                          "driver for the Radeon 9800.",
-                  foreground="#6e6e73", wraplength=420, justify="left").grid(
-            row=10, column=0, columnspan=2, sticky="w")
+            row=9, column=0, columnspan=3, sticky="w", padx=(22, 0))
 
-        ttk.Separator(f).grid(row=4, column=0, columnspan=2, sticky="ew", pady=10)
+        ttk.Separator(f).grid(row=10, column=0, columnspan=3, sticky="ew", pady=10)
         self.vnc_on = tk.BooleanVar(value=False)
         ttk.Checkbutton(f, text="Show this Mac's screen over VNC instead",
                        variable=self.vnc_on, command=self._vnc_changed).grid(
-            row=5, column=0, columnspan=2, sticky="w")
-        ttk.Label(f, text="VNC display (e.g. :1):").grid(row=6, column=0, sticky="w", pady=(6, 0))
+            row=11, column=0, columnspan=3, sticky="w")
+        ttk.Label(f, text="VNC display (e.g. :1):").grid(row=12, column=0, sticky="w", pady=(6, 0))
         self.vnc_var = tk.StringVar()
         self.vnc_entry = ttk.Entry(f, textvariable=self.vnc_var, width=16)
-        self.vnc_entry.grid(row=6, column=1, sticky="w", pady=(6, 0))
+        self.vnc_entry.grid(row=12, column=1, sticky="w", pady=(6, 0))
 
     def _vnc_changed(self, _e=None):
         if self.vnc_on.get():
@@ -310,19 +328,36 @@ class MachineEditor(tk.Toplevel):
         self._gpu_model_changed(set_rom=False)
 
     def _gpu_model_changed(self, _e=None, set_rom=True):
-        """Switching card swaps in that card's usual ROM, unless the field
-        holds something of the person's own; the GL options only apply to
-        the Radeon 9800."""
+        """Each card has its own ROM field; the GL options only apply to the
+        Radeon 9800, and Backend only while OpenGL is not off."""
         key = self._gpu_key()
         on = self.gpu_on.get()
-        if set_rom and on:
-            cur = self.gpu_rom_var.get().strip()
-            if not cur or cur in model.GPU_ROMS.values():
-                self.gpu_rom_var.set(model.GPU_ROMS[key])
-        self.gpu_model_cb.state(["!disabled"] if on else ["disabled"])
-        gl = ["!disabled"] if on and key == "radeon9800" else ["disabled"]
-        self.gl_cb.state(gl)
-        self.gl_api_cb.state(gl)
+        for k in model.GPU_MODELS:
+            st = ["!disabled"] if on else ["disabled"]
+            self.gpu_radios[k].state(st)
+            self.gpu_rom_buttons[k].state(st)
+            self.gpu_rom_cbs[k].state(st)
+        gl_on = on and key == "radeon9800"
+        self.gl_cb.state(["!disabled"] if gl_on else ["disabled"])
+        api_on = gl_on and self.gl_var.get() != "off"
+        self.gl_api_cb.state(["!disabled"] if api_on else ["disabled"])
+
+    @property
+    def gpu_rom_var(self):
+        """The ROM field of the selected card."""
+        return self.rom_vars[self._gpu_key()]
+
+    def _choose_rom(self, key):
+        var = self.rom_vars[key]
+        current = var.get().strip()
+        if current and not Path(current).is_absolute():
+            current = paths.join_path(self.qemu_dir, current)
+        start = paths.browse_start_dir(current, self.qemu_dir)
+        f = filedialog.askopenfilename(parent=self, initialdir=str(start), filetypes=ROM_TYPES)
+        if f:
+            var.set(rom_value(f, self.qemu_dir))
+            self.gpu_model_var.set(model.GPU_LABELS[key])
+            self._gpu_model_changed()
 
     def _gpu_key(self):
         label = self.gpu_model_var.get()
@@ -699,13 +734,16 @@ class MachineEditor(tk.Toplevel):
         self._vnc_changed()
         if m.gpu:
             self.gpu_on.set(True)
-            self.gpu_rom_var.set(m.gpu.romfile or "")
             self.gpu_model_var.set(m.gpu.label)
+            if m.gpu.romfile:
+                self.rom_vars[m.gpu.model if m.gpu.model in self.rom_vars else "rage128"].set(
+                    m.gpu.romfile)
+            elif m.gpu.model in self.rom_vars:
+                self.rom_vars[m.gpu.model].set("")
             self.gl_var.set(m.gpu.gl)
             self.gl_api_var.set(m.gpu.gl_api)
         else:
             self.gpu_on.set(False)
-            self.gpu_rom_var.set("")
             self.gpu_model_var.set(model.GPU_LABELS["rage128"])
         self._gpu_model_changed(set_rom=False)
         for i, row in enumerate(self.ata_rows):

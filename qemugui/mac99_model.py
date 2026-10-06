@@ -208,6 +208,21 @@ class UsbStorage:
 GPU_MODELS = ("rage128", "radeon9800")
 GPU_LABELS = {"rage128": "ATI Rage 128 Pro", "radeon9800": "ATI Radeon 9800"}
 GPU_ROMS = {"rage128": "ati_rage128pro_136_agp.rom", "radeon9800": "ati_radeon_9800xt_123.rom"}
+ROM_SUFFIXES = (".rom",)
+
+
+def roms_in(folder) -> list[str]:
+    """The ROM files lying in *folder*, by name."""
+    if not folder:
+        return []
+    try:
+        entries = list(Path(folder).iterdir())
+    except OSError:
+        return []
+    return sorted((p.name for p in entries
+                   if p.is_file() and p.suffix.lower() in ROM_SUFFIXES), key=str.lower)
+
+
 GL_MODES = ("off", "on", "fast")
 GL_APIS = ("gl", "metal")
 

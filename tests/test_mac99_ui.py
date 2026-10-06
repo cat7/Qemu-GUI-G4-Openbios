@@ -118,16 +118,46 @@ class CheckboxPolarity(unittest.TestCase):
         g = ed.collect().gpu
         self.assertEqual((g.model, g.romfile, g.gl), ("radeon9800", "mine.rom", "on"))
 
-    def test_switching_card_swaps_the_default_rom_only(self):
-        m = Machine(name="t", gpu=Gpu("ati_rage128pro_136_agp.rom"))
+    def test_each_card_keeps_its_own_rom_field(self):
+        m = Machine(name="t", gpu=Gpu("old.rom"))
         ed = self._editor(m)
+        self.assertEqual(ed.rom_vars["rage128"].get(), "old.rom")
+        ed.rom_vars["radeon9800"].set("x9800.rom")
         ed.gpu_model_var.set("ATI Radeon 9800")
         ed._gpu_model_changed()
-        self.assertEqual(ed.gpu_rom_var.get(), "ati_radeon_9800xt_123.rom")
-        ed.gpu_rom_var.set("custom.rom")
+        g = ed.collect().gpu
+        self.assertEqual((g.model, g.romfile), ("radeon9800", "x9800.rom"))
         ed.gpu_model_var.set("ATI Rage 128 Pro")
         ed._gpu_model_changed()
-        self.assertEqual(ed.gpu_rom_var.get(), "custom.rom")
+        g = ed.collect().gpu
+        self.assertEqual((g.model, g.romfile), ("rage128", "old.rom"))
+
+    def test_gl_options_grey_out_by_card_and_opengl(self):
+        ed = self._editor(Machine(name="t", gpu=Gpu("a.rom")))
+        self.assertIn("disabled", ed.gl_cb.state())
+        self.assertIn("disabled", ed.gl_api_cb.state())
+        ed.gpu_model_var.set("ATI Radeon 9800")
+        ed.gl_var.set("fast")
+        ed._gpu_model_changed()
+        self.assertNotIn("disabled", ed.gl_cb.state())
+        self.assertNotIn("disabled", ed.gl_api_cb.state())
+        ed.gl_var.set("off")
+        ed._gpu_model_changed()
+        self.assertNotIn("disabled", ed.gl_cb.state())
+        self.assertIn("disabled", ed.gl_api_cb.state())
+
+    def test_rom_value_keeps_qemu_dir_roms_by_name(self):
+        from qemugui.mac99_ui_machine import rom_value
+        with tempfile.TemporaryDirectory() as qd:
+            self.assertEqual(rom_value(str(Path(qd) / "card.rom"), qd), "card.rom")
+        self.assertEqual(rom_value("/elsewhere/card.rom", "/qd"), "/elsewhere/card.rom")
+
+    def test_roms_in_lists_rom_files_only(self):
+        with tempfile.TemporaryDirectory() as td:
+            for n in ("b.rom", "A.ROM", "c.img"):
+                (Path(td) / n).write_bytes(b"x")
+            self.assertEqual(model.roms_in(td), ["A.ROM", "b.rom"])
+        self.assertEqual(model.roms_in(None), [])
 
     def test_toggling_the_gpu_does_not_overrule_a_hand_set_checkbox(self):
         """Only the toggle sets a starting point; a person can still flip
