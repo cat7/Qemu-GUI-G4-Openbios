@@ -14,9 +14,10 @@
 # folder; Machines/ stays beside the application, never inside the
 # (read-only) bundle.
 
+import os
 import sys
 
-TARGET_ARCH = 'universal2' if sys.platform == 'darwin' else None
+TARGET_ARCH = (os.environ.get('QEMUGUI_TARGET_ARCH') or 'universal2') if sys.platform == 'darwin' else None
 
 a = Analysis(
     ['mac99_gui.py'],
