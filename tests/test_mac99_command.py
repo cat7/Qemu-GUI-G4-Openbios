@@ -565,17 +565,19 @@ class UsbAudio(unittest.TestCase):
         self.assertEqual(audiodevs(command.build_argv(m, "", "/m", "darwin")),
                          ["none,id=snd", "none,id=usb"])
 
-    def test_not_doubled_when_extra_args_already_has_one(self):
+    def test_extra_args_usb_audio_replaced_by_own_backend(self):
         m = self.base()
         m.usb_audio = True
-        m.extra_args = "-device usb-audio,audiodev=snd"
+        m.extra_args = "-device usb-audio,audiodev=snd -device usb-kbd"
         argv = command.build_argv(m, "", "/m", "darwin")
-        self.assertNotIn(USB_AUDIO, pairs(argv))
-        self.assertEqual(audiodevs(argv), ["coreaudio,id=snd"])
-        self.assertEqual(argv[-2:], ["-device", "usb-audio,audiodev=snd"])
-        m.extra_args = "-device usb-audio"
-        argv = command.build_argv(m, "", "/m", "darwin")
+        self.assertIn(USB_AUDIO, pairs(argv))
+        self.assertEqual(audiodevs(argv), ["coreaudio,id=snd", "coreaudio,id=usb"])
         self.assertEqual(sum(1 for t in argv if t.startswith("usb-audio")), 1)
+        self.assertEqual(argv[-2:], ["-device", "usb-kbd"])
+        self.assertEqual(command.extra_count(m, "darwin"), 2)
+        m.usb_audio = False
+        argv = command.build_argv(m, "", "/m", "darwin")
+        self.assertIn(["-device", "usb-audio,audiodev=snd"], pairs(argv))
         self.assertEqual(audiodevs(argv), ["coreaudio,id=snd"])
 
     def test_json_round_trip_and_missing_key(self):

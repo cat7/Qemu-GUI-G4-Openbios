@@ -112,8 +112,8 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
 
     audio = paths.resolve_audio(m.audio, platform)
     argv += ["-audiodev", f"{audio},id=snd", "-global", "screamer.audiodev=snd"]
-    extra = split_extra_args(m.extra_args, platform)
-    if m.usb_audio and not any(t.split(",")[0] == "usb-audio" for t in extra):
+    extra = _extra_tokens(m, platform)
+    if m.usb_audio:
         # Own backend: a shared one is pinned at zero by the Screamer's idle voice.
         argv += ["-audiodev", f"{audio},id=usb", "-device", "usb-audio,audiodev=usb"]
 
@@ -172,8 +172,26 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
 OWNED_SETTINGS_FILES = ("nvram.img",)
 
 
+def _extra_tokens(m: Machine, platform: str) -> list[str]:
+    """Extra arguments; with USB audio on, a usb-audio -device there is
+    dropped in favour of the one with its own backend."""
+    toks = split_extra_args(m.extra_args, platform)
+    if not m.usb_audio:
+        return toks
+    out: list[str] = []
+    i = 0
+    while i < len(toks):
+        if (toks[i] == "-device" and i + 1 < len(toks)
+                and toks[i + 1].split(",")[0] == "usb-audio"):
+            i += 2
+            continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
 def extra_count(m: Machine, platform: str = paths.HOST_PLATFORM) -> int:
-    return len(split_extra_args(m.extra_args, platform))
+    return len(_extra_tokens(m, platform))
 
 
 def render_shell(argv: list[str], sudo: bool = False, extra: int = 0) -> str:
