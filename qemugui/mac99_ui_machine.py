@@ -496,7 +496,7 @@ class MachineEditor(tk.Toplevel):
                           "ticked the machine starts with sudo and asks for your password. "
                           "High-speed devices go on the USB 2.0 bus, others on the second "
                           "USB 1.1 bus.\n"
-                          "USB 2.0 needs Mac OS X 10.2.8 or later. Older systems (Mac OS 9, OS X 10.0–10.2.7) only see USB 1.1, so a USB 2.0-only device will not work there. A device that also supports USB 1.1 can be forced to it by plugging it into a USB 1.1 hub on this Mac.",
+                          "USB 2.0 needs Mac OS X 10.2.8 or later. Mac OS 9 and OS X 10.0–10.2.7 only have USB 1.1: there a USB 2.0 device (flash drive, webcam, ...) works only when it is plugged into a real USB 1.1 hub connected to this Mac. Keyboards, mice and other simple devices work without one.",
                   foreground=GREY, wraplength=EDITOR_WIDTH - 60, justify="left").grid(
             row=0, column=0, sticky="ew", pady=(0, 6))
         self.usb_host_list = ttk.Frame(f)
@@ -565,7 +565,7 @@ class MachineEditor(tk.Toplevel):
                           "it there, Give back to Windows returns it; each asks once for "
                           "administrator rights. High-speed devices go on the USB 2.0 bus, "
                           "others on the second USB 1.1 bus.\n"
-                          "USB 2.0 needs Mac OS X 10.2.8 or later. Older systems (Mac OS 9, OS X 10.0–10.2.7) only see USB 1.1, so a USB 2.0-only device will not work there. A device that also supports USB 1.1 can be forced to it by plugging it into a USB 1.1 hub on this Mac.",
+                          "USB 2.0 needs Mac OS X 10.2.8 or later. Mac OS 9 and OS X 10.0–10.2.7 only have USB 1.1: there a USB 2.0 device (flash drive, webcam, ...) works only when it is plugged into a real USB 1.1 hub connected to this PC. Keyboards, mice and other simple devices work without one.",
                   foreground=GREY, wraplength=EDITOR_WIDTH - 60, justify="left").grid(
             row=0, column=0, sticky="ew", pady=(0, 6))
         self.usb_host_list = ttk.Frame(f)
