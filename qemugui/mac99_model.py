@@ -205,6 +205,7 @@ class UsbStorage:
         return cls(str(d.get("file", "")), str(d.get("format", "raw")))
 
 
+STD_VGA_LABEL = "Standard VGA"
 GPU_MODELS = ("rage128", "radeon9800")
 GPU_LABELS = {"rage128": "ATI Rage 128 Pro", "radeon9800": "ATI Radeon 9800"}
 GPU_ROMS = {"rage128": "ati_rage128pro_136_agp.rom", "radeon9800": "ati_radeon_9800xt_123.rom"}

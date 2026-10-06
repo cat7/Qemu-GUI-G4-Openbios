@@ -97,8 +97,8 @@ class CheckboxPolarity(unittest.TestCase):
         m = Machine(name="t", gpu=None, prom_env=PromEnv(vga_ndrv=True))
         ed = self._editor(m)
         self.assertFalse(ed.no_vga_driver_var.get())
-        ed.gpu_on.set(True)
-        ed._gpu_changed()
+        ed.gpu_model_var.set("ATI Rage 128 Pro")
+        ed._gpu_pick()
         self.assertTrue(ed.no_vga_driver_var.get())
         self.assertFalse(ed.collect().prom_env.vga_ndrv)
 
@@ -106,8 +106,8 @@ class CheckboxPolarity(unittest.TestCase):
         m = Machine(name="t", gpu=Gpu("card.rom"), prom_env=PromEnv(vga_ndrv=False))
         ed = self._editor(m)
         self.assertTrue(ed.no_vga_driver_var.get())
-        ed.gpu_on.set(False)
-        ed._gpu_changed()
+        ed.gpu_model_var.set("Standard VGA")
+        ed._gpu_pick()
         self.assertFalse(ed.no_vga_driver_var.get())
         self.assertTrue(ed.collect().prom_env.vga_ndrv)
 
@@ -117,6 +117,20 @@ class CheckboxPolarity(unittest.TestCase):
         self.assertEqual(ed.gpu_model_var.get(), "ATI Radeon 9800")
         g = ed.collect().gpu
         self.assertEqual((g.model, g.romfile, g.gl), ("radeon9800", "mine.rom", "on"))
+
+    def test_old_record_without_gpu_is_standard_vga(self):
+        ed = self._editor(Machine(name="t", gpu=None))
+        self.assertEqual(ed.gpu_model_var.get(), "Standard VGA")
+        self.assertIsNone(ed.collect().gpu)
+        for st in (ed.gl_cb.state(), ed.gl_api_cb.state(), ed.gpu_rom_cbs["rage128"].state()):
+            self.assertIn("disabled", st)
+
+    def test_three_choices_round_trip(self):
+        for gpu, label in ((None, "Standard VGA"), (Gpu("a.rom"), "ATI Rage 128 Pro"),
+                           (Gpu("b.rom", "radeon9800", "on", "gl"), "ATI Radeon 9800")):
+            ed = self._editor(Machine(name="t", gpu=gpu))
+            self.assertEqual(ed.gpu_model_var.get(), label)
+            self.assertEqual(ed.collect().gpu, gpu)
 
     def test_each_card_keeps_its_own_rom_field(self):
         m = Machine(name="t", gpu=Gpu("old.rom"))
@@ -164,8 +178,8 @@ class CheckboxPolarity(unittest.TestCase):
         the checkbox back afterwards and it stays put."""
         m = Machine(name="t", gpu=None, prom_env=PromEnv(vga_ndrv=True))
         ed = self._editor(m)
-        ed.gpu_on.set(True)
-        ed._gpu_changed()
+        ed.gpu_model_var.set("ATI Rage 128 Pro")
+        ed._gpu_pick()
         ed.no_vga_driver_var.set(False)          # a person overrides it
         self.assertTrue(ed.collect().prom_env.vga_ndrv)
 
