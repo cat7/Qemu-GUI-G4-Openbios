@@ -210,6 +210,7 @@ GPU_MODELS = ("rage128", "radeon9800")
 GPU_LABELS = {"rage128": "ATI Rage 128 Pro", "radeon9800": "ATI Radeon 9800"}
 GPU_ROMS = {"rage128": "ati_rage128pro_136_agp.rom", "radeon9800": "ati_radeon_9800xt_123.rom"}
 ROM_SUFFIXES = (".rom",)
+FIRMWARE_FILE = "openbios-qemu.elf"
 
 
 def roms_in(folder) -> list[str]:
@@ -222,6 +223,18 @@ def roms_in(folder) -> list[str]:
         return []
     return sorted((p.name for p in entries
                    if p.is_file() and p.suffix.lower() in ROM_SUFFIXES), key=str.lower)
+
+
+def bios_in(folder) -> list[str]:
+    """The firmware candidates lying in *folder*: ``*.elf`` and ``openbios*``."""
+    if not folder:
+        return []
+    try:
+        entries = list(Path(folder).iterdir())
+    except OSError:
+        return []
+    return sorted((p.name for p in entries if p.is_file() and (
+        p.suffix.lower() == ".elf" or p.name.lower().startswith("openbios"))), key=str.lower)
 
 
 GL_MODES = ("off", "on", "fast")
@@ -426,6 +439,7 @@ class Machine:
     via: str = "pmu"              # cuda | pmu | pmu-adb
     ram_mb: int = 512
     smp: int = 1
+    bios: str = FIRMWARE_FILE
     display: str = "cocoa"
     vnc: str = ""                  # "" = off; else a -vnc display spec, e.g. ":1"
     audio: str = "default"
@@ -450,6 +464,7 @@ class Machine:
             "via": self.via,
             "ram_mb": self.ram_mb,
             "smp": self.smp,
+            "bios": self.bios,
             "display": self.display,
             "vnc": self.vnc,
             "audio": self.audio,
@@ -482,6 +497,7 @@ class Machine:
             via=str(d.get("via") or "pmu"),
             ram_mb=int(d.get("ram_mb", 512)),
             smp=int(d.get("smp", 1) or 1),
+            bios=str(d.get("bios") or FIRMWARE_FILE),
             display=str(d.get("display") or default_display()),
             vnc=str(d.get("vnc", "") or ""),
             audio=str(d.get("audio", "default")),
@@ -670,6 +686,9 @@ def validate(m: Machine, qemu_dir: str | None, platform: str = paths.HOST_PLATFO
     if check_files:
         qd = qemu_dir or ""
         if qd and paths.has_qemu(qd, platform):
+            fw = paths.join_path(qd, m.bios or FIRMWARE_FILE, platform)
+            if not Path(fw).is_file():
+                warnings.append(f"The firmware is missing: {fw}")
             rel = m.gpu.romfile if m.gpu else None
             if rel and not Path(paths.join_path(qd, rel, platform)).is_file():
                 warnings.append("The graphics card's ROM is missing: "

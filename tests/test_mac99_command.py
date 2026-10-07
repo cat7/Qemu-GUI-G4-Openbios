@@ -46,6 +46,7 @@ FIXTURE_QEMU_DIR = {
 USER_MAC99_OSX = r"""
 ./qemu-system-ppc \
 -L ./pc-bios \
+-bios ./openbios-qemu.elf \
 -M mac99,via=pmu \
 -smp 4 \
 -display sdl \
@@ -346,14 +347,51 @@ class Options(unittest.TestCase):
         argv = command.build_argv(m, "/install", "/m", "darwin")
         self.assertEqual(argv[argv.index("-L") + 1], "/install/pc-bios")
 
-    def test_there_is_no_firmware_override(self):
-        """-L ./pc-bios is fixed by the distribution layout; there is
-        nothing on this machine that needs a different OpenBIOS binary, so
-        the option was removed rather than shipped unused (user review,
-        2026-09-14)."""
-        self.assertFalse(hasattr(Machine(), "firmware"))
-        src = (HERE.parent / "qemugui" / "mac99_command.py").read_text()
-        self.assertNotIn('"-bios"', src)          # "pc-bios" itself stays
+    def bios_arg(self, m, qd="/install", platform="darwin", md="/m"):
+        argv = command.build_argv(m, qd, md, platform)
+        return argv[argv.index("-bios") + 1]
+
+    def test_bios_default(self):
+        m = self.base()
+        self.assertEqual(m.bios, "openbios-qemu.elf")
+        self.assertEqual(self.bios_arg(m), "/install/openbios-qemu.elf")
+
+    def test_bios_custom_file(self):
+        m = self.base()
+        m.bios = "openbios-test.elf"
+        self.assertEqual(self.bios_arg(m), "/install/openbios-test.elf")
+        self.assertEqual(Machine.from_json(m.to_json()).bios, "openbios-test.elf")
+        m.bios = "/elsewhere/fw.elf"
+        self.assertEqual(self.bios_arg(m), "/elsewhere/fw.elf")
+
+    def test_bios_old_record(self):
+        d = json.loads(self.base().to_json())
+        d.pop("bios", None)
+        self.assertEqual(Machine.from_dict(d).bios, "openbios-qemu.elf")
+        d["bios"] = ""
+        self.assertEqual(Machine.from_dict(d).bios, "openbios-qemu.elf")
+
+    def test_bios_windows_quoting(self):
+        m = self.base()
+        m.bios = r"D:\fw dir\fw.elf"
+        self.assertEqual(self.bios_arg(m, r"C:\q", "win32", r"C:\m"), r"D:\fw dir\fw.elf")
+        m.bios = "openbios-test.elf"
+        self.assertEqual(self.bios_arg(m, r"C:\q", "win32", r"C:\m"), r"C:\q\openbios-test.elf")
+        argv = command.build_argv(m, r"C:\q", r"C:\m", "win32")
+        bat = command.render_bat(argv, command.extra_count(m, "win32"))
+        self.assertIn(r"-bios C:\q\openbios-test.elf", bat)
+        m.bios = r"D:\fw dir\fw.elf"
+        argv = command.build_argv(m, r"C:\q", r"C:\m", "win32")
+        bat = command.render_bat(argv, command.extra_count(m, "win32"))
+        self.assertIn(r'"D:\fw dir\fw.elf"', bat)
+
+    def test_bios_in_lists_firmware_candidates(self):
+        with tempfile.TemporaryDirectory() as td:
+            for n in ("b.rom", "x.ELF", "OpenBIOS-old", "openbios-qemu.elf", "notes.txt"):
+                (Path(td) / n).write_text("")
+            (Path(td) / "dir.elf").mkdir()
+            self.assertEqual(model.bios_in(td), ["OpenBIOS-old", "openbios-qemu.elf", "x.ELF"])
+        self.assertEqual(model.bios_in(None), [])
 
     def test_comma_in_path_is_escaped_for_qemu(self):
         m = self.base()
