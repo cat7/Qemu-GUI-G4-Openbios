@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec for Qemu-system-ppc G4 Openbios GUI.
+# PyInstaller spec for Qemu-system-ppc G4 Openbios Experimental GUI.
 #
 # Build with the python.org universal2 framework Python, which has a
 # working tkinter on both arches --
@@ -7,8 +7,8 @@
 #   /Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13 \
 #       -m PyInstaller --noconfirm Mac99GUI.spec
 #
-# Put the result ("dist/Qemu-system-ppc G4 Openbios GUI.app" on macOS,
-# the single "dist/Qemu-system-ppc G4 Openbios GUI.exe" on Windows) into
+# Put the result ("dist/Qemu-system-ppc G4 Openbios Experimental GUI.app" on macOS,
+# the single "dist/Qemu-system-ppc G4 Openbios Experimental GUI.exe" on Windows) into
 # the distribution folder that holds the qemu-system-ppc binary and
 # pc-bios/. paths.resolve_install_dir walks up out of the .app to find that
 # folder; Machines/ stays beside the application, never inside the
@@ -44,7 +44,7 @@ if sys.platform == 'win32':
         a.binaries,
         a.datas,
         [],
-        name='Qemu-system-ppc G4 Openbios GUI',
+        name='Qemu-system-ppc G4 Openbios Experimental GUI',
         debug=False,
         bootloader_ignore_signals=False,
         strip=False,
@@ -57,7 +57,7 @@ else:
         a.scripts,
         [],
         exclude_binaries=True,
-        name='Qemu-system-ppc G4 Openbios GUI',
+        name='Qemu-system-ppc G4 Openbios Experimental GUI',
         debug=False,
         bootloader_ignore_signals=False,
         strip=False,
@@ -73,16 +73,16 @@ else:
         a.datas,
         strip=False,
         upx=False,
-        name='Qemu-system-ppc G4 Openbios GUI',
+        name='Qemu-system-ppc G4 Openbios Experimental GUI',
     )
     app = BUNDLE(
         coll,
-        name='Qemu-system-ppc G4 Openbios GUI.app',
+        name='Qemu-system-ppc G4 Openbios Experimental GUI.app',
         icon=None,
-        bundle_identifier='org.cat7.qemu-gui-mac99',
+        bundle_identifier='org.cat7.qemu-gui-mac99-experimental',
         info_plist={
-            'CFBundleName': 'Qemu-system-ppc G4 Openbios GUI',
-            'CFBundleDisplayName': 'Qemu-system-ppc G4 Openbios GUI',
+            'CFBundleName': 'Qemu-system-ppc G4 Openbios Experimental GUI',
+            'CFBundleDisplayName': 'Qemu-system-ppc G4 Openbios Experimental GUI',
             'CFBundleShortVersionString': '1.0',
             'CFBundleVersion': '1.0',
             'NSHighResolutionCapable': True,

@@ -19,8 +19,9 @@ from tkinter import ttk, messagebox, simpledialog
 
 from . import mac99_model as model
 from . import paths
+from . import optical
 
-APP_NAME = "Qemu-system-ppc G4 Openbios GUI"
+APP_NAME = paths.APP_NAME
 DISK_SIZES = ("1", "2", "4", "8", "10", "20")
 
 
@@ -188,6 +189,39 @@ class CreateDiskDialog(simpledialog.Dialog):
         chosen = self.place_var.get()
         place = next((where for label, where in self.choices if label == chosen), None)
         self.result = (str(self.target), fmt, place)
+
+
+class HostDriveDialog(simpledialog.Dialog):
+    """Pick one of the host's optical drives for a CD position. ``result``
+    is the drive's path (/dev/diskN, D:), or None."""
+
+    def __init__(self, parent, drives=None):
+        self.drives = optical.host_drives(paths.HOST_PLATFORM) if drives is None else drives
+        self.result = None
+        super().__init__(parent, "Host optical drive")
+
+    def body(self, master):
+        refresh_native_style(self)
+        if not self.drives:
+            ttk.Label(master, text="No optical drive with a disc was found.").grid(
+                row=0, column=0, padx=8, pady=8)
+            return None
+        ttk.Label(master, text="The Mac gets the drive while the machine runs "
+                  if paths.HOST_PLATFORM == "darwin" else
+                  "Data discs only; audio tracks are not read on Windows.").grid(
+            row=0, column=0, sticky="w", padx=8, pady=(8, 2))
+        self.box = tk.Listbox(master, height=min(8, len(self.drives)), width=56,
+                              exportselection=False)
+        for d in self.drives:
+            self.box.insert("end", d.text)
+        self.box.selection_set(0)
+        self.box.grid(row=1, column=0, padx=8, pady=8)
+        return self.box
+
+    def apply(self):
+        sel = self.box.curselection() if self.drives else ()
+        if sel:
+            self.result = self.drives[sel[0]].path
 
 
 def open_folder(path: Path) -> None:

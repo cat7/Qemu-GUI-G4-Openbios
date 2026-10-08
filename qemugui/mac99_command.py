@@ -18,6 +18,8 @@ docstring for what that character actually selects.
 
 from __future__ import annotations
 
+import shlex
+
 from . import paths
 from .paths import (qopt, split_extra_args, group_options, bat_quote, drive_format,
                     SUDO_KEEPALIVE)  # re-exported
@@ -25,7 +27,7 @@ from . import mac99_model as model
 from . import usbhost
 from .mac99_model import Machine
 
-HEADER_NOTE = "Written by Qemu-system-ppc G4 Openbios GUI. Do not edit."
+HEADER_NOTE = "Written by Qemu-system-ppc G4 Openbios Experimental GUI. Do not edit."
 
 # Kept for anything still reading command.AUDIO_DEFAULT directly; the
 # resolution itself goes through paths.resolve_audio.
@@ -67,7 +69,51 @@ def needs_sudo(m: Machine, platform: str = paths.HOST_PLATFORM) -> bool:
     """vmnet, host forward ports below 1024, and QEMU's usb-host, which takes a device from macOS only as
     root."""
     usb = platform == "darwin" and bool(m.usb_host_devices)
-    return paths.sudo_applies(m.network.needs_sudo or m.network.low_host_port or usb, platform)
+    optical = platform == "darwin" and bool(model.host_drives(m))
+    return paths.sudo_applies(m.network.needs_sudo or m.network.low_host_port or usb or optical,
+                              platform)
+
+
+CD_AUDIODEV = "cdaudio"
+
+
+def unmount_lines(m: Machine) -> tuple[str, ...]:
+    """macOS holds a disc's volumes mounted, and QEMU cannot open the drive
+    until they are not."""
+    return tuple(f"diskutil unmountDisk {shlex.quote(d)}" for d in model.host_drives(m))
+
+
+def _has_cd(m: Machine) -> bool:
+    return any(d and d.file and d.kind == "cdrom" for d in m.ata)
+
+
+def cd_audiodev_id(m: Machine) -> str:
+    return "usb" if m.usb_audio else CD_AUDIODEV
+
+
+def _ata_args(index: int, d, machine_dir: str, m: Machine, platform: str) -> list[str]:
+    """-drive (and, for a CD that needs one, -device) for IDE position *index*.
+    A CD with sound out, or a host drive, goes through -device ide-cd on the
+    position's own bus and unit; a plain image keeps the -drive index= form."""
+    host = d.kind == "cdrom" and paths.is_host_drive(d.file)
+    fmt = "raw" if host else drive_format(d.format, d.file, machine_dir)
+    name = (paths.host_drive_file(d.file, platform) if host
+            else _path(d.file, machine_dir, platform))
+    if d.kind != "cdrom":
+        extra = ",snapshot=on" if fmt == "dmg" else ""
+        return ["-drive", f"file={qopt(name)},format={fmt},media=disk,index={index}{extra}"]
+    tail = ",readonly=on" if fmt == "dmg" else ""
+    if not host and not m.cd_audio:
+        return ["-drive", f"file={qopt(name)},format={fmt},media=cdrom,index={index}{tail}"]
+    drive_id = f"cd{index}"
+    if host and platform == "darwin":
+        src = f"driver=host_cdrom,filename={qopt(name)}"
+    else:
+        src = f"file={qopt(name)},format={fmt}"
+    dev = f"ide-cd,drive={drive_id},bus=ide.{index // 2},unit={index % 2}"
+    if m.cd_audio:
+        dev += f",audiodev={cd_audiodev_id(m)}"
+    return ["-drive", f"if=none,id={drive_id},{src},media=cdrom{tail}", "-device", dev]
 
 
 def prom_env_tokens(m: Machine) -> list[str]:
@@ -119,6 +165,8 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
     if m.usb_audio:
         # Own backend: a shared one is pinned at zero by the Screamer's idle voice.
         argv += ["-audiodev", f"{audio},id=usb", "-device", "usb-audio,audiodev=usb"]
+    elif m.cd_audio and _has_cd(m):
+        argv += ["-audiodev", f"{audio},id={CD_AUDIODEV}"]
 
     if m.gpu:
         parts = ["ati-radeon9800" if m.gpu.model == "radeon9800" else "ati-rage128-pro"]
@@ -135,10 +183,7 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
     for index, d in enumerate(m.ata):
         if d is None or not d.file:
             continue
-        media = "cdrom" if d.kind == "cdrom" else "disk"
-        argv += ["-drive", f"file={qopt(_path(d.file, machine_dir, platform))},"
-                           f"format={drive_format(d.format, d.file, machine_dir)},"
-                           f"media={media},index={index}"]
+        argv += _ata_args(index, d, machine_dir, m, platform)
 
     for i, u in enumerate(m.usb_storage):
         if not u.file:
@@ -206,15 +251,16 @@ def render_bat(argv: list[str], extra: int = 0, title: str = "") -> str:
 
 
 def render_launcher(argv: list[str], platform: str = paths.HOST_PLATFORM, sudo: bool = False,
-                    extra: int = 0, title: str = "") -> str:
+                    extra: int = 0, title: str = "", pre: tuple[str, ...] = ()) -> str:
     return paths.render_launcher(argv, HEADER_NOTE, platform, sudo, OWNED_SETTINGS_FILES, extra,
-                                 title)
+                                 title, pre)
 
 
 def launcher_text(m: Machine, qemu_dir: str, machine_dir: str,
                   platform: str = paths.HOST_PLATFORM, owned=None) -> str:
     return render_launcher(build_argv(m, qemu_dir, machine_dir, platform, owned), platform,
-                           needs_sudo(m, platform), extra_count(m, platform), m.name)
+                           needs_sudo(m, platform), extra_count(m, platform), m.name,
+                           unmount_lines(m))
 
 
 def write_launcher(m: Machine, qemu_dir: str, machine_dir: str,
@@ -226,7 +272,7 @@ def write_launcher(m: Machine, qemu_dir: str, machine_dir: str,
     ensure_nvram_file(machine_dir)
     argv = build_argv(m, qemu_dir, machine_dir, platform, owned)
     text = render_launcher(argv, platform, needs_sudo(m, platform), extra_count(m, platform),
-                           m.name)
+                           m.name, unmount_lines(m))
     path = Path(machine_dir) / paths.launcher_name(platform)
     path.write_text(text, encoding="utf-8", newline="")
     if not paths.is_windows(platform):

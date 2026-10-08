@@ -92,7 +92,11 @@ def user_tokens(text: str, qemu_dir: str) -> set[str]:
 
 
 def load_fixture(name: str) -> Machine:
-    return Machine.load(FIXTURES / name)
+    """CD audio out is off here: the reference launch line has none, and
+    with it off a plain CD keeps the -drive index= form (see test_cd_drives)."""
+    m = Machine.load(FIXTURES / name)
+    m.cd_audio = False
+    return m
 
 
 def gen_tokens(m: Machine, qemu_dir: str, platform: str = "darwin") -> set[str]:
