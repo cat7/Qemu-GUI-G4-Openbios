@@ -177,20 +177,20 @@ class HostDrive(unittest.TestCase):
         win = machine(None, None, AtaDrive("cdrom", "D:"))
         self.assertIn("filename=/dev/cdrom", drives(command.build_argv(win, QD, MD, "darwin"))[0])
 
-    def test_needs_sudo_on_macos_only(self):
+    def test_host_drive_needs_no_sudo(self):
         m = machine(None, None, AtaDrive("cdrom", self.NAME))
-        self.assertTrue(command.needs_sudo(m, "darwin"))
+        self.assertFalse(command.needs_sudo(m, "darwin"))
         self.assertFalse(command.needs_sudo(m, "win32"))
         self.assertFalse(command.needs_sudo(machine(None, None, AtaDrive("cdrom", "/a.iso")),
                                             "darwin"))
 
-    def test_launcher_runs_sudo_without_unmounting(self):
+    def test_launcher_runs_without_sudo_or_unmounting(self):
         for f in (self.NAME, "/dev/disk5"):
             text = command.launcher_text(machine(None, None, AtaDrive("cdrom", f)), QD, MD,
                                          "darwin")
             self.assertNotIn("diskutil", text)
-            self.assertTrue(any(ln.startswith("sudo /Applications/q/")
-                                for ln in text.splitlines()))
+            self.assertFalse(any(ln.startswith("sudo ") for ln in text.splitlines()))
+            self.assertIn("/Applications/q/", text)
             if f == self.NAME:
                 self.assertIn("'if=none,id=cd2,driver=host_cdrom,drive=HL-DT-ST DVDRAM GP57EB40,"
                               "media=cdrom'", text)

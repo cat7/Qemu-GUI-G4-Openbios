@@ -64,12 +64,10 @@ def nic_option(net) -> str:
 
 
 def needs_sudo(m: Machine, platform: str = paths.HOST_PLATFORM) -> bool:
-    """vmnet, host forward ports below 1024, QEMU's usb-host, which takes a device from macOS only as
-    root, and a host optical drive, whose disc nodes may be root-only."""
+    """vmnet, host forward ports below 1024 and QEMU's usb-host, which takes a device from macOS only as
+    root. Discs in a host optical drive belong to the console user."""
     usb = platform == "darwin" and bool(m.usb_host_devices)
-    optical = platform == "darwin" and bool(model.host_drives(m))
-    return paths.sudo_applies(m.network.needs_sudo or m.network.low_host_port or usb or optical,
-                              platform)
+    return paths.sudo_applies(m.network.needs_sudo or m.network.low_host_port or usb, platform)
 
 
 CD_AUDIODEV = "cdaudio"
