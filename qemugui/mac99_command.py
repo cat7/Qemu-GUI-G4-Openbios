@@ -137,7 +137,7 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
     if m.vnc.strip():
         argv += ["-display", "none", "-vnc", m.vnc.strip()]
     else:
-        argv += ["-display", m.display]
+        argv += ["-display", paths.host_display(m.display, platform)]
     argv += ["-m", str(int(m.ram_mb))]
     # 'c' tries the "hd" alias, anything else (here 'd') the "cd" one --
     # see mac99_model.py's module docstring for the alias mechanism.

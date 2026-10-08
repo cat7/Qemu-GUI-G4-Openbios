@@ -266,3 +266,13 @@ class Listing(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DisplayFallbackTest(unittest.TestCase):
+    def test_gtk_record_runs_sdl_on_windows(self):
+        from qemugui import paths
+        self.assertEqual(paths.host_display("gtk", "win32"), "sdl")
+        self.assertEqual(paths.host_display("sdl", "win32"), "sdl")
+        self.assertEqual(paths.host_display("gtk", "linux"), "gtk")
+        self.assertEqual(paths.host_display("cocoa", "darwin"), "cocoa")
+        self.assertEqual(paths.host_display("cocoa", "win32"), "sdl")

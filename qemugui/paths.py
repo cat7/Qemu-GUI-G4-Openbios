@@ -132,13 +132,20 @@ def join_path(base: str, name: str, platform: str = HOST_PLATFORM) -> str:
 # which host it is edited on, but the choices offered while editing, and the
 # choice a brand new record starts with, do.
 
-DISPLAYS = {"darwin": ("cocoa", "sdl"), "win32": ("sdl", "gtk"), "linux": ("sdl", "gtk")}
+DISPLAYS = {"darwin": ("cocoa", "sdl"), "win32": ("sdl",), "linux": ("sdl", "gtk")}
 
 
 def default_display(platform: str = HOST_PLATFORM) -> str:
     """The first choice offered on this computer, which is what a new machine
     starts with: ``cocoa`` on a Mac, ``sdl`` anywhere else."""
     return DISPLAYS.get("win32" if is_windows(platform) else platform, ("sdl",))[0]
+
+
+def host_display(display: str, platform: str = HOST_PLATFORM) -> str:
+    """*display* if this computer offers it, else its default: a record
+    saved on another host may name a backend this build lacks."""
+    offered = DISPLAYS.get("win32" if is_windows(platform) else platform, ("sdl",))
+    return display if display in offered else offered[0]
 
 
 # --------------------------------------------------------- audio defaults
