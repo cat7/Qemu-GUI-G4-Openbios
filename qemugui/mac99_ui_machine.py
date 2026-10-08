@@ -113,7 +113,7 @@ class AtaRow:
                    command=self._pick_host_drive).grid(row=row, column=5, padx=(6, 0))
 
     def _pick_host_drive(self):
-        dlg = HostDriveDialog(self.picker.entry.winfo_toplevel())
+        dlg = HostDriveDialog(self.picker.entry.winfo_toplevel(), current=self.file.get())
         if dlg.result:
             self.kind.set(KIND_LABELS["cdrom"])
             self.file.set(dlg.result)
@@ -420,9 +420,10 @@ class MachineEditor(tk.Toplevel):
         r += 1
         ttk.Label(f, text="A .dmg or .cue image works as a CD. A .dmg as a hard disk is read "
                   "only: what the Mac writes to it is thrown away when the machine quits. "
-                  "Host drive… gives a CD position a real optical drive"
-                  + (" (the Mac unmounts the disc first and the machine starts with sudo)."
-                     if paths.HOST_PLATFORM == "darwin" else " (data discs only)."),
+                  "Host drive… gives a CD position a real optical drive; discs can be "
+                  "changed while the machine runs"
+                  + (" (the machine starts with sudo)." if paths.HOST_PLATFORM == "darwin"
+                     else "."),
                   foreground=GREY, wraplength=EDITOR_WIDTH - 40, justify="left").grid(
             row=r, column=0, sticky="w", pady=(6, 0))
         r += 1

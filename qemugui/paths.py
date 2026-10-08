@@ -262,21 +262,38 @@ def drive_format(stored: str, file: str, base: str) -> str:
 
 HOST_DRIVE_RE = re.compile(r"^(/dev/\S+|(\\\\\.\\)?[A-Za-z]:\\?)$")
 
+# A CD slot names a host optical DRIVE, not a disc: "drive:<vendor product>"
+# on macOS, the drive letter on Windows. Records from before that hold the
+# disc's /dev/diskN; they follow the first optical drive.
+DRIVE_PREFIX = "drive:"
+
 
 def is_host_drive(file: str) -> bool:
-    """A drive entry that names a host optical drive (/dev/diskN, D:) rather
-    than an image file."""
-    return bool(HOST_DRIVE_RE.match((file or "").strip()))
+    """A drive entry that names a host optical drive (drive:<name>, D:, or
+    an old /dev/diskN) rather than an image file."""
+    f = (file or "").strip()
+    return f.startswith(DRIVE_PREFIX) and len(f) > len(DRIVE_PREFIX) or \
+        bool(HOST_DRIVE_RE.match(f))
 
 
-def host_drive_file(file: str, platform: str = HOST_PLATFORM) -> str:
-    """The name QEMU opens the host drive by: \\\\.\\D: on Windows, the
-    device node elsewhere."""
-    f = file.strip()
-    if not is_windows(platform):
-        return f
-    letter = f.replace("\\", "").replace(".", "").replace(":", "")[-1:].upper()
-    return "\\\\.\\" + letter + ":"
+def drive_letter(file: str) -> str:
+    """D from "D:", "d:\\" or "\\\\.\\D:"; "" if *file* is not a letter."""
+    f = (file or "").strip()
+    m = re.fullmatch(r"(?:\\\\\.\\)?([A-Za-z]):\\?", f)
+    return m.group(1).upper() if m else ""
+
+
+def host_drive_option(file: str, platform: str = HOST_PLATFORM) -> str:
+    """The -drive source naming the host drive. A record QEMU on this
+    platform cannot name a drive by goes to the first optical drive."""
+    f = (file or "").strip()
+    if is_windows(platform):
+        letter = drive_letter(f)
+        return f"driver=host_cdrom,drive={letter}:" if letter else \
+            "driver=host_cdrom,filename=/dev/cdrom"
+    if f.startswith(DRIVE_PREFIX):
+        return f"driver=host_cdrom,drive={qopt(f[len(DRIVE_PREFIX):])}"
+    return "driver=host_cdrom,filename=/dev/cdrom"
 
 
 def sudo_applies(needs_sudo: bool, platform: str = HOST_PLATFORM) -> bool:

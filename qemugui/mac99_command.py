@@ -18,8 +18,6 @@ docstring for what that character actually selects.
 
 from __future__ import annotations
 
-import shlex
-
 from . import paths
 from .paths import (qopt, split_extra_args, group_options, bat_quote, drive_format,
                     SUDO_KEEPALIVE)  # re-exported
@@ -66,8 +64,8 @@ def nic_option(net) -> str:
 
 
 def needs_sudo(m: Machine, platform: str = paths.HOST_PLATFORM) -> bool:
-    """vmnet, host forward ports below 1024, and QEMU's usb-host, which takes a device from macOS only as
-    root."""
+    """vmnet, host forward ports below 1024, QEMU's usb-host, which takes a device from macOS only as
+    root, and a host optical drive, whose disc nodes may be root-only."""
     usb = platform == "darwin" and bool(m.usb_host_devices)
     optical = platform == "darwin" and bool(model.host_drives(m))
     return paths.sudo_applies(m.network.needs_sudo or m.network.low_host_port or usb or optical,
@@ -75,12 +73,6 @@ def needs_sudo(m: Machine, platform: str = paths.HOST_PLATFORM) -> bool:
 
 
 CD_AUDIODEV = "cdaudio"
-
-
-def unmount_lines(m: Machine) -> tuple[str, ...]:
-    """macOS holds a disc's volumes mounted, and QEMU cannot open the drive
-    until they are not."""
-    return tuple(f"diskutil unmountDisk {shlex.quote(d)}" for d in model.host_drives(m))
 
 
 def _has_cd(m: Machine) -> bool:
@@ -97,8 +89,7 @@ def _ata_args(index: int, d, machine_dir: str, m: Machine, platform: str) -> lis
     position's own bus and unit; a plain image keeps the -drive index= form."""
     host = d.kind == "cdrom" and paths.is_host_drive(d.file)
     fmt = "raw" if host else drive_format(d.format, d.file, machine_dir)
-    name = (paths.host_drive_file(d.file, platform) if host
-            else _path(d.file, machine_dir, platform))
+    name = "" if host else _path(d.file, machine_dir, platform)
     if d.kind != "cdrom":
         extra = ",snapshot=on" if fmt == "dmg" else ""
         return ["-drive", f"file={qopt(name)},format={fmt},media=disk,index={index}{extra}"]
@@ -106,8 +97,8 @@ def _ata_args(index: int, d, machine_dir: str, m: Machine, platform: str) -> lis
     if not host and not m.cd_audio:
         return ["-drive", f"file={qopt(name)},format={fmt},media=cdrom,index={index}{tail}"]
     drive_id = f"cd{index}"
-    if host and platform == "darwin":
-        src = f"driver=host_cdrom,filename={qopt(name)}"
+    if host:
+        src = paths.host_drive_option(d.file, platform)
     else:
         src = f"file={qopt(name)},format={fmt}"
     dev = f"ide-cd,drive={drive_id},bus=ide.{index // 2},unit={index % 2}"
@@ -259,8 +250,7 @@ def render_launcher(argv: list[str], platform: str = paths.HOST_PLATFORM, sudo: 
 def launcher_text(m: Machine, qemu_dir: str, machine_dir: str,
                   platform: str = paths.HOST_PLATFORM, owned=None) -> str:
     return render_launcher(build_argv(m, qemu_dir, machine_dir, platform, owned), platform,
-                           needs_sudo(m, platform), extra_count(m, platform), m.name,
-                           unmount_lines(m))
+                           needs_sudo(m, platform), extra_count(m, platform), m.name)
 
 
 def write_launcher(m: Machine, qemu_dir: str, machine_dir: str,
@@ -272,7 +262,7 @@ def write_launcher(m: Machine, qemu_dir: str, machine_dir: str,
     ensure_nvram_file(machine_dir)
     argv = build_argv(m, qemu_dir, machine_dir, platform, owned)
     text = render_launcher(argv, platform, needs_sudo(m, platform), extra_count(m, platform),
-                           m.name, unmount_lines(m))
+                           m.name)
     path = Path(machine_dir) / paths.launcher_name(platform)
     path.write_text(text, encoding="utf-8", newline="")
     if not paths.is_windows(platform):

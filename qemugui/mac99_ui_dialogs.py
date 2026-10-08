@@ -192,29 +192,33 @@ class CreateDiskDialog(simpledialog.Dialog):
 
 
 class HostDriveDialog(simpledialog.Dialog):
-    """Pick one of the host's optical drives for a CD position. ``result``
-    is the drive's path (/dev/diskN, D:), or None."""
+    """Pick one of the host's optical drives for a CD position, with or
+    without a disc in it. ``result`` is what the slot stores (drive:<name>
+    on macOS, D: on Windows), or None. *current* is preselected."""
 
-    def __init__(self, parent, drives=None):
+    def __init__(self, parent, drives=None, current: str = ""):
         self.drives = optical.host_drives(paths.HOST_PLATFORM) if drives is None else drives
+        self.current = (current or "").strip()
         self.result = None
         super().__init__(parent, "Host optical drive")
 
     def body(self, master):
         refresh_native_style(self)
         if not self.drives:
-            ttk.Label(master, text="No optical drive with a disc was found.").grid(
+            ttk.Label(master, text="No optical drive was found.").grid(
                 row=0, column=0, padx=8, pady=8)
             return None
-        ttk.Label(master, text="The Mac gets the drive while the machine runs "
-                  if paths.HOST_PLATFORM == "darwin" else
-                  "Data discs only; audio tracks are not read on Windows.").grid(
+        ttk.Label(master, text="The Mac gets the drive while the machine runs; "
+                  "discs can be changed at any time.").grid(
             row=0, column=0, sticky="w", padx=8, pady=(8, 2))
-        self.box = tk.Listbox(master, height=min(8, len(self.drives)), width=56,
+        self.box = tk.Listbox(master, height=min(8, len(self.drives)), width=64,
                               exportselection=False)
-        for d in self.drives:
+        pick = 0
+        for i, d in enumerate(self.drives):
             self.box.insert("end", d.text)
-        self.box.selection_set(0)
+            if d.path.lower() == self.current.lower():
+                pick = i
+        self.box.selection_set(pick)
         self.box.grid(row=1, column=0, padx=8, pady=8)
         return self.box
 
