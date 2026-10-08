@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import sys
 from dataclasses import dataclass, asdict
@@ -209,6 +210,9 @@ def default_audio_label(platform: str = HOST_PLATFORM) -> str:
 # ------------------------------------------------------------ image formats
 
 FORMATS = ("raw", "qcow2")
+# What a drive row can name: dmg and cue are read-only sources QEMU opens
+# itself, never something a new disk is created as.
+DRIVE_FORMATS = FORMATS + ("dmg", "cue")
 
 # QEMU probes an image by its magic number; do the same, so an existing file
 # picked in the editor is described correctly instead of always as "raw".
@@ -216,7 +220,7 @@ FORMAT_MAGIC = ((b"QFI\xfb", "qcow2"),
                 (b"KDMV", "vmdk"),
                 (b"conectix", "vpc"),
                 (b"<<< Oracle VM VirtualBox Disk Image", "vdi"))
-FORMAT_BY_SUFFIX = {".qcow2": "qcow2", ".qcow": "qcow2", ".vmdk": "vmdk",
+FORMAT_BY_SUFFIX = {".dmg": "dmg", ".cue": "cue", ".qcow2": "qcow2", ".qcow": "qcow2", ".vmdk": "vmdk",
                     ".vdi": "vdi", ".vhd": "vpc", ".vhdx": "vpc"}
 MAGIC_LENGTH = max(len(magic) for magic, _ in FORMAT_MAGIC)
 
@@ -239,7 +243,7 @@ def detect_format(path: str) -> str:
         if head.startswith(magic):
             name = fmt
             break
-    return name if name in FORMATS else "raw"
+    return name if name in DRIVE_FORMATS else "raw"
 
 
 def drive_format(stored: str, file: str, base: str) -> str:
@@ -254,6 +258,25 @@ def drive_format(stored: str, file: str, base: str) -> str:
     if not os.path.isfile(p):
         return "raw"
     return detect_format(p)
+
+
+HOST_DRIVE_RE = re.compile(r"^(/dev/\S+|(\\\\\.\\)?[A-Za-z]:\\?)$")
+
+
+def is_host_drive(file: str) -> bool:
+    """A drive entry that names a host optical drive (/dev/diskN, D:) rather
+    than an image file."""
+    return bool(HOST_DRIVE_RE.match((file or "").strip()))
+
+
+def host_drive_file(file: str, platform: str = HOST_PLATFORM) -> str:
+    """The name QEMU opens the host drive by: \\\\.\\D: on Windows, the
+    device node elsewhere."""
+    f = file.strip()
+    if not is_windows(platform):
+        return f
+    letter = f.replace("\\", "").replace(".", "").replace(":", "")[-1:].upper()
+    return "\\\\.\\" + letter + ":"
 
 
 def sudo_applies(needs_sudo: bool, platform: str = HOST_PLATFORM) -> bool:
@@ -335,11 +358,13 @@ def sudo_chown_line(owned_files: tuple[str, ...]) -> str:
 
 
 def render_shell(argv: list[str], header_note: str, owned_files: tuple[str, ...] = (),
-                 sudo: bool = False, extra: int = 0) -> str:
+                 sudo: bool = False, extra: int = 0, pre: tuple[str, ...] = ()) -> str:
     lines = ["#!/bin/bash",
              f"# {header_note}",
              'cd "$(dirname "$0")"',
              ""]
+    if pre:
+        lines += list(pre) + [""]
     if sudo:
         lines += [SUDO_KEEPALIVE, ""]
     lines.append(("sudo " if sudo else "") + shlex.quote(argv[0]) + " \\")
@@ -400,11 +425,12 @@ def render_bat(argv: list[str], header_note: str, extra: int = 0, title: str = "
 
 def render_launcher(argv: list[str], header_note: str, platform: str = HOST_PLATFORM,
                     sudo: bool = False, owned_files: tuple[str, ...] = (),
-                    extra: int = 0, title: str = "") -> str:
-    """The .bat never gets sudo; *sudo* only affects the shell rendering."""
+                    extra: int = 0, title: str = "", pre: tuple[str, ...] = ()) -> str:
+    """The .bat never gets sudo; *sudo* only affects the shell rendering.
+    *pre*: shell lines to run before the emulator (the .bat has none)."""
     if is_windows(platform):
         return render_bat(argv, header_note, extra, title)
-    return render_shell(argv, header_note, owned_files, sudo, extra)
+    return render_shell(argv, header_note, owned_files, sudo, extra, pre)
 
 
 def browse_start_dir(current: str | None, fallback: Path | str | None = None) -> Path:

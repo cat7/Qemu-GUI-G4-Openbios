@@ -21,15 +21,16 @@ from . import usbhost
 from . import winusb
 from . import mac99_model as model
 from .mac99_model import Machine, AtaDrive, Gpu, Network, PromEnv, UsbStorage, Share, UsbHostDevice
-from .mac99_ui_dialogs import show_validation, refresh_native_style, CreateDiskDialog
+from .mac99_ui_dialogs import (show_validation, refresh_native_style, CreateDiskDialog,
+                               HostDriveDialog)
 
 KIND_LABELS = {"": "Empty", "disk": "Hard disk", "cdrom": "CD"}
 KIND_BY_LABEL = {v: k for k, v in KIND_LABELS.items()}
-IMAGE_TYPES = [("Hard disks and CDs", "*.img *.dsk *.qcow2 *.iso *.toast *.cdr"),
+IMAGE_TYPES = [("Hard disks and CDs", "*.img *.dsk *.qcow2 *.iso *.toast *.cdr *.dmg *.cue"),
               ("Every file", "*")]
 ROM_TYPES = [("ROM files", "*.rom *.ROM *.bin"), ("Every file", "*")]
 BIOS_TYPES = [("OpenBIOS", "*.elf openbios*"), ("Every file", "*")]
-CDROM_EXTS = {".iso", ".toast", ".cdr", ".dmg"}
+CDROM_EXTS = {".iso", ".toast", ".cdr", ".dmg", ".cue"}
 
 GREY = "gray"
 EDITOR_WIDTH = 780
@@ -104,10 +105,19 @@ class AtaRow:
                                  on_pick=self._file_picked)
         self.picker.grid(row=row, column=2, sticky="ew", padx=2, pady=1)
         self.file.trace_add("write", lambda *_a: self._infer_kind())
-        ttk.Combobox(master, textvariable=self.format, values=model.FORMATS, state="readonly",
+        ttk.Combobox(master, textvariable=self.format, values=model.DRIVE_FORMATS, state="readonly",
                     width=6).grid(row=row, column=3, padx=2)
         ttk.Checkbutton(master, text="Boot", variable=self.boot,
                        command=self._boot_toggled).grid(row=row, column=4, padx=(6, 0))
+        ttk.Button(master, text="Host drive…", width=11,
+                   command=self._pick_host_drive).grid(row=row, column=5, padx=(6, 0))
+
+    def _pick_host_drive(self):
+        dlg = HostDriveDialog(self.picker.entry.winfo_toplevel())
+        if dlg.result:
+            self.kind.set(KIND_LABELS["cdrom"])
+            self.file.set(dlg.result)
+            self.format.set("raw")
 
     def _file_picked(self, path: str):
         """Only a file chosen through the dialog re-detects the format, so a
@@ -402,11 +412,19 @@ class MachineEditor(tk.Toplevel):
         ata = ttk.Frame(f)
         ata.grid(row=r, column=0, sticky="ew")
         ata.columnconfigure(2, weight=1)
-        for c, h in enumerate(("Position", "", "", "Format", "")):
+        for c, h in enumerate(("Position", "", "", "Format", "", "")):
             ttk.Label(ata, text=h, foreground=GREY).grid(row=0, column=c, sticky="w", padx=4)
         self.ata_rows = [AtaRow(ata, 1 + i, model.ata_slot_name(i), fallback=self.machine_folder,
                                 on_boot=self._boot_row_toggled)
                         for i in range(len(model.ATA_SLOTS))]
+        r += 1
+        ttk.Label(f, text="A .dmg or .cue image works as a CD. A .dmg as a hard disk is read "
+                  "only: what the Mac writes to it is thrown away when the machine quits. "
+                  "Host drive… gives a CD position a real optical drive"
+                  + (" (the Mac unmounts the disc first and the machine starts with sudo)."
+                     if paths.HOST_PLATFORM == "darwin" else " (data discs only)."),
+                  foreground=GREY, wraplength=EDITOR_WIDTH - 40, justify="left").grid(
+            row=r, column=0, sticky="w", pady=(6, 0))
         r += 1
         self.new_disk_button = None
         if paths.qemu_img_binary().is_file():
@@ -486,6 +504,12 @@ class MachineEditor(tk.Toplevel):
         self.usb_audio_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(f, text="USB audio device (microphone input)",
                        variable=self.usb_audio_var).grid(row=12, column=0, columnspan=3, sticky="w")
+        ttk.Separator(f).grid(row=13, column=0, columnspan=3, sticky="ew", pady=10)
+        ttk.Label(f, text="CD", font=("", 0, "bold")).grid(
+            row=14, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        self.cd_audio_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(f, text="CD audio out (audio discs play through the sound interface)",
+                       variable=self.cd_audio_var).grid(row=15, column=0, columnspan=3, sticky="w")
 
     def _net_mode_changed(self, _e=None):
         mode = model.network_mode_by_label(self.net_mode.get())
@@ -821,6 +845,7 @@ class MachineEditor(tk.Toplevel):
         self._net_mode_changed()
         self.audio_var.set(m.audio)
         self.usb_audio_var.set(m.usb_audio)
+        self.cd_audio_var.set(m.cd_audio)
         self.share_folder_var.set(m.share.folder)
         self.share_user_var.set(m.share.user)
         self.share_password_var.set(m.share.password)
@@ -862,6 +887,7 @@ class MachineEditor(tk.Toplevel):
         m.network = Network(mode, self.mac_var.get().strip(), ifname, fwd)
         m.audio = self.audio_var.get()
         m.usb_audio = self.usb_audio_var.get()
+        m.cd_audio = self.cd_audio_var.get()
         m.share = Share(self.share_folder_var.get().strip(), self.share_user_var.get().strip(),
                         self.share_password_var.get(), self.share_scope.get())
         m.prom_env = PromEnv(not self.boot_into_ofw_var.get(), not self.no_vga_driver_var.get(),
