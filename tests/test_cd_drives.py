@@ -132,82 +132,136 @@ class CdAudio(unittest.TestCase):
 
 
 class HostDrive(unittest.TestCase):
+    NAME = "drive:HL-DT-ST DVDRAM GP57EB40"
+
     def test_detection(self):
-        for f in ("/dev/disk5", "D:", "d:\\", "\\\\.\\E:"):
+        for f in (self.NAME, "/dev/disk5", "/dev/cdrom", "D:", "d:\\", "\\\\.\\E:"):
             self.assertTrue(paths.is_host_drive(f), f)
-        for f in ("/a/disk5.iso", "disk5", "C:\\x.iso", ""):
+        for f in ("/a/disk5.iso", "disk5", "C:\\x.iso", "", "drive:"):
             self.assertFalse(paths.is_host_drive(f), f)
 
-    def test_macos_argv(self):
+    def test_macos_argv_names_the_drive(self):
+        m = machine(None, None, AtaDrive("cdrom", self.NAME))
+        argv = command.build_argv(m, QD, MD, "darwin")
+        self.assertEqual(drives(argv), ["if=none,id=cd2,driver=host_cdrom,"
+                                        "drive=HL-DT-ST DVDRAM GP57EB40,media=cdrom"])
+        self.assertIn("ide-cd,drive=cd2,bus=ide.1,unit=0,audiodev=cdaudio", devices(argv))
+
+    def test_drive_name_commas_escaped(self):
+        m = machine(None, None, AtaDrive("cdrom", "drive:ACME CD,X"))
+        self.assertIn("drive=ACME CD,,X,", drives(command.build_argv(m, QD, MD, "darwin"))[0])
+
+    def test_old_disc_record_follows_the_first_drive(self):
         m = machine(None, None, AtaDrive("cdrom", "/dev/disk5"))
         argv = command.build_argv(m, QD, MD, "darwin")
         self.assertEqual(drives(argv),
-                         ["if=none,id=cd2,driver=host_cdrom,filename=/dev/disk5,media=cdrom"])
-        self.assertIn("ide-cd,drive=cd2,bus=ide.1,unit=0,audiodev=cdaudio", devices(argv))
+                         ["if=none,id=cd2,driver=host_cdrom,filename=/dev/cdrom,media=cdrom"])
 
     def test_macos_host_drive_without_audio_still_a_device(self):
-        m = machine(None, None, AtaDrive("cdrom", "/dev/disk5"))
+        m = machine(None, None, AtaDrive("cdrom", self.NAME))
         m.cd_audio = False
         argv = command.build_argv(m, QD, MD, "darwin")
         self.assertIn("ide-cd,drive=cd2,bus=ide.1,unit=0", devices(argv))
 
     def test_windows_argv(self):
-        m = machine(None, None, AtaDrive("cdrom", "d:"))
-        argv = command.build_argv(m, "C:\\q", "C:\\m", "win32")
-        self.assertEqual(drives(argv), ["if=none,id=cd2,file=\\\\.\\D:,format=raw,media=cdrom"])
+        for f in ("d:", "D:\\", "\\\\.\\D:"):
+            m = machine(None, None, AtaDrive("cdrom", f))
+            argv = command.build_argv(m, "C:\\q", "C:\\m", "win32")
+            self.assertEqual(drives(argv),
+                             ["if=none,id=cd2,driver=host_cdrom,drive=D:,media=cdrom"], f)
+
+    def test_records_from_the_other_host(self):
+        mac = machine(None, None, AtaDrive("cdrom", self.NAME))
+        self.assertIn("filename=/dev/cdrom", drives(command.build_argv(mac, "C:\\q", "C:\\m",
+                                                                      "win32"))[0])
+        win = machine(None, None, AtaDrive("cdrom", "D:"))
+        self.assertIn("filename=/dev/cdrom", drives(command.build_argv(win, QD, MD, "darwin"))[0])
 
     def test_needs_sudo_on_macos_only(self):
-        m = machine(None, None, AtaDrive("cdrom", "/dev/disk5"))
+        m = machine(None, None, AtaDrive("cdrom", self.NAME))
         self.assertTrue(command.needs_sudo(m, "darwin"))
         self.assertFalse(command.needs_sudo(m, "win32"))
         self.assertFalse(command.needs_sudo(machine(None, None, AtaDrive("cdrom", "/a.iso")),
                                             "darwin"))
 
-    def test_launcher_unmounts_before_sudo(self):
-        m = machine(None, None, AtaDrive("cdrom", "/dev/disk5"))
-        text = command.launcher_text(m, QD, MD, "darwin")
-        lines = text.splitlines()
-        self.assertIn("diskutil unmountDisk /dev/disk5", lines)
-        self.assertLess(lines.index("diskutil unmountDisk /dev/disk5"), lines.index("sudo -v"))
-        self.assertTrue(any(ln.startswith("sudo /Applications/q/") for ln in lines))
-
-    def test_plain_launcher_has_no_diskutil(self):
-        m = machine(None, None, AtaDrive("cdrom", "/a.iso"))
-        self.assertNotIn("diskutil", command.launcher_text(m, QD, MD, "darwin"))
+    def test_launcher_runs_sudo_without_unmounting(self):
+        for f in (self.NAME, "/dev/disk5"):
+            text = command.launcher_text(machine(None, None, AtaDrive("cdrom", f)), QD, MD,
+                                         "darwin")
+            self.assertNotIn("diskutil", text)
+            self.assertTrue(any(ln.startswith("sudo /Applications/q/")
+                                for ln in text.splitlines()))
+            if f == self.NAME:
+                self.assertIn("'if=none,id=cd2,driver=host_cdrom,drive=HL-DT-ST DVDRAM GP57EB40,"
+                              "media=cdrom'", text)
 
     def test_bat_has_no_diskutil(self):
         m = machine(None, None, AtaDrive("cdrom", "D:"))
         self.assertNotIn("diskutil", command.launcher_text(m, "C:\\q", "C:\\m", "win32"))
 
     def test_not_checked_as_an_image_file(self):
-        m = machine(None, None, AtaDrive("cdrom", "/dev/disk5"))
-        self.assertEqual(m.image_paths(), [])
-        _errors, warnings = model.validate(m, QD, "darwin", machine_dir=MD)
-        self.assertFalse(any("disk5" in w for w in warnings))
+        for f in (self.NAME, "/dev/disk5"):
+            m = machine(None, None, AtaDrive("cdrom", f))
+            self.assertEqual(m.image_paths(), [])
+            _errors, warnings = model.validate(m, QD, "darwin", machine_dir=MD)
+            self.assertFalse(any("GP57EB40" in w or "disk5" in w for w in warnings), f)
+
+    def test_record_round_trips(self):
+        m = machine(None, None, AtaDrive("cdrom", self.NAME))
+        back = Machine.from_json(m.to_json())
+        self.assertEqual(back.ata[2].file, self.NAME)
 
     def test_a_hard_disk_entry_is_not_a_host_drive(self):
         self.assertEqual(model.host_drives(machine(AtaDrive("disk", "/dev/disk5"))), [])
+
+
+def ioreg_node(vendor, product, media=None):
+    node = {"IOObjectClass": "IODVDServices",
+            "Device Characteristics": {"Vendor Name": vendor, "Product Name": product},
+            "IORegistryEntryChildren": [{"IOObjectClass": "SCSITaskUserClientIniter"}]}
+    if media:
+        cls, bsd = media
+        node["IORegistryEntryChildren"].append(
+            {"IOObjectClass": "IODVDBlockStorageDriver", "IORegistryEntryChildren": [
+                {"IOObjectClass": cls, "BSD Name": bsd, "Whole": True,
+                 "IORegistryEntryChildren": [
+                     {"IOObjectClass": "IOMedia", "BSD Name": bsd + "s1", "Whole": False}]}]})
+    return node
 
 
 class Listing(unittest.TestCase):
     def plist(self, d):
         return plistlib.dumps(d)
 
-    def test_whole_disks(self):
-        data = self.plist({"WholeDisks": ["disk0", "disk5", "x"]})
-        self.assertEqual(optical.parse_whole_disks(data), ["disk0", "disk5"])
-        self.assertEqual(optical.parse_whole_disks(b"junk"), [])
+    def test_drive_with_and_without_disc(self):
+        data = self.plist([ioreg_node("HL-DT-ST ", " DVDRAM  GP57EB40", ("IOCDMedia", "disk5")),
+                           ioreg_node("MATSHITA", "DVD-R UJ-85J")])
+        self.assertEqual(optical.parse_ioreg(data),
+                         [("HL-DT-ST DVDRAM GP57EB40", "disk5", "CD"),
+                          ("MATSHITA DVD-R UJ-85J", "", "")])
 
-    def test_optical_info(self):
-        d = optical.drive_from_info(self.plist({"DeviceIdentifier": "disk5",
-                                                "OpticalMediaType": "CD-ROM",
-                                                "VolumeName": "Chess"}))
-        self.assertEqual((d.path, d.label), ("/dev/disk5", "Chess - CD-ROM"))
+    def test_dvd_media_kind(self):
+        data = self.plist([ioreg_node("A", "B", ("IODVDMedia", "disk9"))])
+        self.assertEqual(optical.parse_ioreg(data), [("A B", "disk9", "DVD")])
 
-    def test_hard_disk_info_is_not_optical(self):
-        self.assertIsNone(optical.drive_from_info(self.plist({"DeviceIdentifier": "disk0",
-                                                              "MediaName": "APPLE SSD"})))
-        self.assertIsNone(optical.drive_from_info(b"junk"))
+    def test_junk_and_nameless(self):
+        self.assertEqual(optical.parse_ioreg(b"junk"), [])
+        self.assertEqual(optical.parse_ioreg(self.plist([{"IOObjectClass": "X"}, 3])), [])
+        self.assertEqual(optical.parse_ioreg(self.plist([ioreg_node("", "")])), [])
+
+    def test_disc_title(self):
+        self.assertEqual(optical.disc_title(self.plist({"VolumeName": "Chess "})), "Chess")
+        self.assertEqual(optical.disc_title(self.plist({"MediaName": "x"})), "")
+        self.assertEqual(optical.disc_title(b"junk"), "")
+
+    def test_drive_text(self):
+        d = optical.OpticalDrive("drive:A B", "A B", "")
+        self.assertEqual(d.text, "A B  -  no disc")
+        self.assertEqual(optical.OpticalDrive("D:", "D:", "Chess").text, "D:  -  Chess")
+
+    def test_name_matches_qemu_folding(self):
+        self.assertEqual(optical.drive_name(" HL-DT-ST\t", "DVDRAM   GP57EB40 "),
+                         "HL-DT-ST DVDRAM GP57EB40")
 
 
 if __name__ == "__main__":
