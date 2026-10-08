@@ -373,7 +373,7 @@ class MachineEditor(tk.Toplevel):
         on = key is not None
         for k in model.GPU_MODELS:
             st = ["!disabled"] if on else ["disabled"]
-            self.gpu_radios[k].state(st)
+            self.gpu_radios[k].state(["!disabled"])
             self.gpu_rom_buttons[k].state(st)
             self.gpu_rom_cbs[k].state(st)
         gl_on = on and key == "radeon9800"
