@@ -150,7 +150,7 @@ AUDIO_MODES = ("default", "sdl", "none")
 VIA_MODES = ("cuda", "pmu", "pmu-adb")
 RAM_CHOICES = (512, 768, 1024, 1536, 2048)
 RAM_MIN, RAM_MAX = 64, 4096
-SMP_MIN, SMP_MAX = 1, 4
+SMP_MIN, SMP_MAX = 1, 16  # Mac OS X 10.5 deadlocks above ~16 CPUs
 
 # The NVRAM this GUI gives each machine. mac99 has no PRAM file the way
 # g3beige does -- see the module docstring.

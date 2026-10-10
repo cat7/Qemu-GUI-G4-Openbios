@@ -166,6 +166,14 @@ class Options(unittest.TestCase):
         errors, _ = model.validate(m, None, "darwin", check_files=False)
         self.assertTrue(any("via pmu or pmu-adb" in e for e in errors))
 
+    def test_cpu_limits(self):
+        m = self.base()
+        m.via = "pmu"
+        for smp, ok in ((1, True), (4, True), (8, True), (16, True), (17, False), (0, False)):
+            m.smp = smp
+            errors, _ = model.validate(m, None, "darwin", check_files=False)
+            self.assertEqual(errors == [], ok, smp)
+
     def test_adb_mouse_global_gated_on_via(self):
         m = self.base()
         m.via = "pmu"
