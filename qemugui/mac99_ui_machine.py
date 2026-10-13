@@ -505,12 +505,15 @@ class MachineEditor(tk.Toplevel):
         self.usb_audio_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(f, text="USB audio device (microphone input)",
                        variable=self.usb_audio_var).grid(row=12, column=0, columnspan=3, sticky="w")
-        ttk.Separator(f).grid(row=13, column=0, columnspan=3, sticky="ew", pady=10)
+        self.usb_tablet_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(f, text="USB tablet (absolute pointer)",
+                       variable=self.usb_tablet_var).grid(row=13, column=0, columnspan=3, sticky="w")
+        ttk.Separator(f).grid(row=14, column=0, columnspan=3, sticky="ew", pady=10)
         ttk.Label(f, text="CD", font=("", 0, "bold")).grid(
-            row=14, column=0, columnspan=3, sticky="w", pady=(0, 4))
+            row=15, column=0, columnspan=3, sticky="w", pady=(0, 4))
         self.cd_audio_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(f, text="CD audio out (audio discs play through the sound interface)",
-                       variable=self.cd_audio_var).grid(row=15, column=0, columnspan=3, sticky="w")
+                       variable=self.cd_audio_var).grid(row=16, column=0, columnspan=3, sticky="w")
 
     def _net_mode_changed(self, _e=None):
         mode = model.network_mode_by_label(self.net_mode.get())
@@ -846,6 +849,7 @@ class MachineEditor(tk.Toplevel):
         self._net_mode_changed()
         self.audio_var.set(m.audio)
         self.usb_audio_var.set(m.usb_audio)
+        self.usb_tablet_var.set(m.usb_tablet)
         self.cd_audio_var.set(m.cd_audio)
         self.share_folder_var.set(m.share.folder)
         self.share_user_var.set(m.share.user)
@@ -888,6 +892,7 @@ class MachineEditor(tk.Toplevel):
         m.network = Network(mode, self.mac_var.get().strip(), ifname, fwd)
         m.audio = self.audio_var.get()
         m.usb_audio = self.usb_audio_var.get()
+        m.usb_tablet = self.usb_tablet_var.get()
         m.cd_audio = self.cd_audio_var.get()
         m.share = Share(self.share_folder_var.get().strip(), self.share_user_var.get().strip(),
                         self.share_password_var.get(), self.share_scope.get())

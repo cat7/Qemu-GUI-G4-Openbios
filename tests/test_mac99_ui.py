@@ -405,6 +405,18 @@ class UsbAudioCheckbox(unittest.TestCase):
         ed.usb_audio_var.set(False)
         self.assertFalse(ed.collect().usb_audio)
 
+    def test_tablet_off_by_default(self):
+        ed = self._editor(Machine(name="t"))
+        self.assertFalse(ed.usb_tablet_var.get())
+        self.assertFalse(ed.collect().usb_tablet)
+
+    def test_tablet_loads_and_collects(self):
+        ed = self._editor(Machine(name="t", usb_tablet=True))
+        self.assertTrue(ed.usb_tablet_var.get())
+        self.assertTrue(ed.collect().usb_tablet)
+        ed.usb_tablet_var.set(False)
+        self.assertFalse(ed.collect().usb_tablet)
+
 
 @unittest.skipUnless(_tk_available(), "no display")
 class TheNetworkAndSoundTabFollowsTheHost(unittest.TestCase):

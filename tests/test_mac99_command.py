@@ -565,6 +565,33 @@ def audiodevs(argv: list[str]) -> list[str]:
     return [g[1] for g in pairs(argv) if g[0] == "-audiodev"]
 
 
+class UsbTablet(unittest.TestCase):
+    def base(self) -> Machine:
+        m = load_fixture("mac99-osx.json")
+        m.extra_args = ""
+        return m
+
+    def test_off_by_default_and_absent(self):
+        m = self.base()
+        self.assertFalse(m.usb_tablet)
+        self.assertFalse(Machine().usb_tablet)
+        for platform in ("darwin", "win32"):
+            self.assertNotIn("usb-tablet", command.build_argv(m, "", "/m", platform))
+
+    def test_on_adds_the_device(self):
+        m = self.base()
+        m.usb_tablet = True
+        for platform in ("darwin", "win32"):
+            self.assertIn(["-device", "usb-tablet"],
+                          pairs(command.build_argv(m, "", "/m", platform)))
+
+    def test_saved_and_loaded(self):
+        m = self.base()
+        m.usb_tablet = True
+        self.assertTrue(Machine.from_dict(m.to_dict()).usb_tablet)
+        self.assertFalse(Machine.from_dict({"name": "t"}).usb_tablet)
+
+
 class UsbAudio(unittest.TestCase):
     """The USB device gets its own backend: on a shared one QEMU's mixer
     advances only as far as the least-advanced voice, and the guest keeps

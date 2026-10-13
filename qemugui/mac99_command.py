@@ -166,6 +166,8 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
         if m.gpu.romfile:
             parts.append(f"romfile={qopt(_path(m.gpu.romfile, qd, platform))}")
         argv += ["-device", ",".join(parts)]
+    if m.usb_tablet:
+        argv += ["-device", "usb-tablet"]
 
     argv += ["-nic", nic_option(m.network)]
 

@@ -451,6 +451,7 @@ class Machine:
     vnc: str = ""                  # "" = off; else a -vnc display spec, e.g. ":1"
     audio: str = "default"
     usb_audio: bool = False
+    usb_tablet: bool = False
     cd_audio: bool = True          # CD drives play audio discs out of the sound backend
     gpu: Gpu | None = None
     network: Network = field(default_factory=Network)
@@ -477,6 +478,7 @@ class Machine:
             "vnc": self.vnc,
             "audio": self.audio,
             "usb_audio": self.usb_audio,
+            "usb_tablet": self.usb_tablet,
             "cd_audio": self.cd_audio,
             "gpu": self.gpu.to_dict() if self.gpu else None,
             "network": self.network.to_dict(),
@@ -511,6 +513,7 @@ class Machine:
             vnc=str(d.get("vnc", "") or ""),
             audio=str(d.get("audio", "default")),
             usb_audio=bool(d.get("usb_audio", False)),
+            usb_tablet=bool(d.get("usb_tablet", False)),
             cd_audio=bool(d.get("cd_audio", True)),
             gpu=Gpu.from_dict(d.get("gpu")),
             network=Network.from_dict(d.get("network")),
