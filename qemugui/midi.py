@@ -129,8 +129,12 @@ class Unsupported:
 
 
 class CoreMidi:
-    """macOS. One client per opened device; MIDISend copies the data, so the
-    packet list may live on the stack of the call."""
+    """macOS. One client for everything, made before anything is asked: the
+    MIDI server is started on demand, and until a client has waited for it
+    the endpoints are there but their properties are not -- the names came
+    back empty and this listed endpoint numbers, which mean nothing in any
+    other process. MIDISend copies the data, so the packet list may live on
+    the stack of the call."""
 
     def __init__(self):
         cm = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/CoreMIDI.framework/CoreMIDI")
@@ -153,6 +157,7 @@ class CoreMidi:
         cm.MIDIGetSource.restype = u32
         cm.MIDIGetSource.argtypes = [ctypes.c_ulong]
         cm.MIDIObjectGetStringProperty.argtypes = [u32, vp, ctypes.POINTER(vp)]
+        cm.MIDIObjectGetIntegerProperty.argtypes = [u32, vp, ctypes.POINTER(ctypes.c_int32)]
         cm.MIDISend.argtypes = [u32, u32, vp]
         cm.MIDIPortConnectSource.argtypes = [u32, u32, vp]
         cm.MIDIPortDisconnectSource.argtypes = [u32, u32]
@@ -164,23 +169,36 @@ class CoreMidi:
         cm.MIDIClientDispose.argtypes = [u32]
         cm.MIDIPortDispose.argtypes = [u32]
         self.cm, self.cf = cm, cf
-        self.display_name = vp.in_dll(cm, "kMIDIPropertyDisplayName")
+        self.name_keys = [vp.in_dll(cm, "kMIDIPropertyDisplayName"),
+                          vp.in_dll(cm, "kMIDIPropertyName")]
+        self.unique_id = vp.in_dll(cm, "kMIDIPropertyUniqueID")
         self.read_proc_type = ctypes.CFUNCTYPE(None, vp, vp, vp)
         self.align4 = platform.machine() == "arm64"
+        self.client = ctypes.c_uint32()
+        name = self._cfstr("Qemu-system-ppc G4")
+        rc = cm.MIDIClientCreate(name, None, None, ctypes.byref(self.client))
+        cf.CFRelease(name)
+        if rc != 0:
+            raise OSError(f"MIDIClientCreate failed ({rc})")
 
     def _cfstr(self, s: str):
         return self.cf.CFStringCreateWithCString(None, s.encode("utf-8"), 0x08000100)
 
     def _name(self, endpoint: int) -> str:
-        ref = ctypes.c_void_p()
-        if self.cm.MIDIObjectGetStringProperty(endpoint, self.display_name,
-                                               ctypes.byref(ref)) == 0 and ref.value:
+        for key in self.name_keys:
+            ref = ctypes.c_void_p()
+            if self.cm.MIDIObjectGetStringProperty(endpoint, key, ctypes.byref(ref)) != 0 \
+                    or not ref.value:
+                continue
             buf = ctypes.create_string_buffer(256)
             ok = self.cf.CFStringGetCString(ref.value, buf, 256, 0x08000100)
             self.cf.CFRelease(ref.value)
-            if ok:
+            if ok and buf.value:
                 return buf.value.decode("utf-8", "replace")
-        return f"MIDI device {endpoint}"
+        # the unique ID, unlike the endpoint number, is the same in every process
+        uid = ctypes.c_int32()
+        self.cm.MIDIObjectGetIntegerProperty(endpoint, self.unique_id, ctypes.byref(uid))
+        return f"MIDI device {uid.value & 0xFFFFFFFF:08X}"
 
     def _endpoints(self, count, get) -> list[tuple[str, int]]:
         out = []
@@ -197,15 +215,6 @@ class CoreMidi:
     def input_names(self) -> list[str]:
         return [n for n, _ in self._endpoints(self.cm.MIDIGetNumberOfSources,
                                               self.cm.MIDIGetSource)]
-
-    def _client(self, what: str) -> ctypes.c_uint32:
-        client = ctypes.c_uint32()
-        name = self._cfstr(f"Qemu-system-ppc G4 {what}")
-        rc = self.cm.MIDIClientCreate(name, None, None, ctypes.byref(client))
-        self.cf.CFRelease(name)
-        if rc != 0:
-            raise OSError(f"MIDIClientCreate failed ({rc})")
-        return client
 
     def open_output(self, name: str):
         dest = dict(self._endpoints(self.cm.MIDIGetNumberOfDestinations,
@@ -227,13 +236,11 @@ class _CoreMidiOut:
 
     def __init__(self, be: CoreMidi, dest: int):
         self.be, self.dest = be, dest
-        self.client = be._client("MIDI out")
         self.port = ctypes.c_uint32()
         pname = be._cfstr("out")
-        rc = be.cm.MIDIOutputPortCreate(self.client.value, pname, ctypes.byref(self.port))
+        rc = be.cm.MIDIOutputPortCreate(be.client.value, pname, ctypes.byref(self.port))
         be.cf.CFRelease(pname)
         if rc != 0:
-            be.cm.MIDIClientDispose(self.client.value)
             raise OSError(f"MIDIOutputPortCreate failed ({rc})")
 
     def send(self, msg: bytes):
@@ -253,23 +260,18 @@ class _CoreMidiOut:
         if self.port.value:
             self.be.cm.MIDIPortDispose(self.port.value)
             self.port.value = 0
-        if self.client.value:
-            self.be.cm.MIDIClientDispose(self.client.value)
-            self.client.value = 0
 
 
 class _CoreMidiIn:
     def __init__(self, be: CoreMidi, src: int, put):
         self.be, self.src, self.put = be, src, put
-        self.client = be._client("MIDI in")
         self.port = ctypes.c_uint32()
         self._proc = be.read_proc_type(self._read)
         pname = be._cfstr("in")
-        rc = be.cm.MIDIInputPortCreate(self.client.value, pname, self._proc, None,
+        rc = be.cm.MIDIInputPortCreate(be.client.value, pname, self._proc, None,
                                        ctypes.byref(self.port))
         be.cf.CFRelease(pname)
         if rc != 0:
-            be.cm.MIDIClientDispose(self.client.value)
             raise OSError(f"MIDIInputPortCreate failed ({rc})")
         be.cm.MIDIPortConnectSource(self.port.value, src, None)
 
@@ -290,9 +292,6 @@ class _CoreMidiIn:
             self.be.cm.MIDIPortDisconnectSource(self.port.value, self.src)
             self.be.cm.MIDIPortDispose(self.port.value)
             self.port.value = 0
-        if self.client.value:
-            self.be.cm.MIDIClientDispose(self.client.value)
-            self.client.value = 0
 
 
 class WinMidi:
