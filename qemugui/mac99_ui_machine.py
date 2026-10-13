@@ -16,11 +16,13 @@ import threading
 from pathlib import Path
 from tkinter import ttk, filedialog, messagebox
 
+from . import midi
 from . import paths
 from . import usbhost
 from . import winusb
 from . import mac99_model as model
-from .mac99_model import Machine, AtaDrive, Gpu, Network, PromEnv, UsbStorage, Share, UsbHostDevice
+from .mac99_model import (Machine, AtaDrive, Gpu, Network, PromEnv, UsbStorage, Share,
+                          UsbHostDevice, Midi)
 from .mac99_ui_dialogs import (show_validation, refresh_native_style, CreateDiskDialog,
                                HostDriveDialog)
 
@@ -33,6 +35,7 @@ BIOS_TYPES = [("OpenBIOS", "*.elf openbios*"), ("Every file", "*")]
 CDROM_EXTS = {".iso", ".toast", ".cdr", ".dmg", ".cue"}
 
 GREY = "gray"
+MIDI_NONE = "(none)"
 EDITOR_WIDTH = 780
 
 
@@ -181,6 +184,7 @@ class MachineEditor(tk.Toplevel):
         self._build_drives()
         self._build_net_audio()
         self._build_share()
+        self._build_midi()
         if paths.HOST_PLATFORM == "darwin":
             self._build_usb_host()
         elif paths.is_windows(paths.HOST_PLATFORM):
@@ -554,6 +558,56 @@ class MachineEditor(tk.Toplevel):
         ttk.Label(f, text="In the Mac: ftp://10.0.2.2/ with the default network setting.",
                  foreground=GREY).grid(row=5, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
+    def _build_midi(self):
+        f = self._tab("MIDI")
+        f.columnconfigure(1, weight=1)
+        self.midi_on = tk.BooleanVar(value=False)
+        ttk.Checkbutton(f, text="MIDI on the modem port", variable=self.midi_on,
+                       command=self._midi_changed).grid(row=0, column=0, columnspan=3,
+                                                        sticky="w", pady=(0, 6))
+        ttk.Label(f, text="Output:").grid(row=1, column=0, sticky="w", pady=4)
+        self.midi_out_var = tk.StringVar(value=MIDI_NONE)
+        self.midi_out_cb = ttk.Combobox(f, textvariable=self.midi_out_var, state="readonly",
+                                        width=40)
+        self.midi_out_cb.grid(row=1, column=1, sticky="ew", pady=4)
+        ttk.Label(f, text="Input:").grid(row=2, column=0, sticky="w", pady=4)
+        self.midi_in_var = tk.StringVar(value=MIDI_NONE)
+        self.midi_in_cb = ttk.Combobox(f, textvariable=self.midi_in_var, state="readonly",
+                                       width=40)
+        self.midi_in_cb.grid(row=2, column=1, sticky="ew", pady=4)
+        self.midi_refresh = ttk.Button(f, text="Refresh", command=self._fill_midi_devices)
+        self.midi_refresh.grid(row=1, column=2, rowspan=2, sticky="ns", padx=4, pady=4)
+        ttk.Label(f, text="Port:").grid(row=3, column=0, sticky="w", pady=4)
+        self.midi_port_var = tk.StringVar(value=str(model.MIDI_DEFAULT_PORT))
+        self.midi_port_entry = ttk.Entry(f, textvariable=self.midi_port_var, width=8)
+        self.midi_port_entry.grid(row=3, column=1, sticky="w", pady=4)
+        ttk.Label(f, text="Output plays what the Mac sends; Input sends to the Mac. "
+                          "In Mac OS 9, set up OMS with a MIDI interface on the modem port. "
+                          "The connection runs in this program while the machine runs.",
+                  foreground=GREY, wraplength=EDITOR_WIDTH - 60, justify="left").grid(
+            row=4, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        self._fill_midi_devices()
+        self._midi_changed()
+
+    def _fill_midi_devices(self):
+        be = midi.backend()
+        for var, cb, names in ((self.midi_out_var, self.midi_out_cb, be.output_names()),
+                               (self.midi_in_var, self.midi_in_cb, be.input_names())):
+            values = [MIDI_NONE] + names
+            chosen = var.get()
+            if chosen and chosen != MIDI_NONE and chosen not in names:
+                values.append(chosen)       # kept, though not plugged in now
+            cb.config(values=values)
+            if not chosen:
+                var.set(MIDI_NONE)
+
+    def _midi_changed(self):
+        state = "normal" if self.midi_on.get() else "disabled"
+        for cb in (self.midi_out_cb, self.midi_in_cb):
+            cb.config(state="readonly" if state == "normal" else "disabled")
+        self.midi_refresh.config(state=state)
+        self.midi_port_entry.config(state=state)
+
     def _choose_share_folder(self):
         start = paths.browse_start_dir(self.share_folder_var.get(), None)
         d = filedialog.askdirectory(parent=self, initialdir=str(start))
@@ -855,6 +909,12 @@ class MachineEditor(tk.Toplevel):
         self.share_user_var.set(m.share.user)
         self.share_password_var.set(m.share.password)
         self.share_scope.set(m.share.scope)
+        self.midi_on.set(m.midi.enabled)
+        self.midi_port_var.set(str(m.midi.port))
+        self.midi_out_var.set(m.midi.output or MIDI_NONE)
+        self.midi_in_var.set(m.midi.input or MIDI_NONE)
+        self._fill_midi_devices()
+        self._midi_changed()
         # inverted: the checkbox asks the opposite question from the field
         self.boot_into_ofw_var.set(not m.prom_env.auto_boot)
         self.no_vga_driver_var.set(not m.prom_env.vga_ndrv)
@@ -896,6 +956,13 @@ class MachineEditor(tk.Toplevel):
         m.cd_audio = self.cd_audio_var.get()
         m.share = Share(self.share_folder_var.get().strip(), self.share_user_var.get().strip(),
                         self.share_password_var.get(), self.share_scope.get())
+        try:
+            midi_port = int(self.midi_port_var.get().strip())
+        except ValueError:
+            midi_port = -1
+        m.midi = Midi(self.midi_on.get(), midi_port,
+                      "" if self.midi_out_var.get() == MIDI_NONE else self.midi_out_var.get(),
+                      "" if self.midi_in_var.get() == MIDI_NONE else self.midi_in_var.get())
         m.prom_env = PromEnv(not self.boot_into_ofw_var.get(), not self.no_vga_driver_var.get(),
                              self.boot_device_var.get().strip(), self.boot_args_var.get().strip())
         m.rtc_base = self.rtc_base_var.get().strip()

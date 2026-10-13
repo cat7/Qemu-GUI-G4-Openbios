@@ -410,6 +410,7 @@ def usb_host_devices_from(value: Any) -> list[UsbHostDevice]:
 
 SHARE_SCOPES = ("guest-only", "all-interfaces")
 SHARE_DEFAULT_USER = "guest"
+MIDI_DEFAULT_PORT = 1234
 
 
 @dataclass
@@ -440,6 +441,32 @@ class Share:
 
 
 @dataclass
+class Midi:
+    """MIDI between the guest's modem port and host MIDI devices while it
+    runs -- see midi.py. Devices are kept by name: their numbers change as
+    others come and go."""
+    enabled: bool = False
+    port: int = MIDI_DEFAULT_PORT
+    output: str = ""             # "" = none
+    input: str = ""
+
+    def to_dict(self) -> dict:
+        return {"enabled": self.enabled, "port": self.port, "output": self.output,
+                "input": self.input}
+
+    @classmethod
+    def from_dict(cls, d: Any) -> "Midi":
+        if not isinstance(d, dict):
+            return cls()
+        try:
+            port = int(d.get("port", MIDI_DEFAULT_PORT))
+        except (TypeError, ValueError):
+            port = MIDI_DEFAULT_PORT
+        return cls(bool(d.get("enabled", False)), port, str(d.get("output", "") or ""),
+                   str(d.get("input", "") or ""))
+
+
+@dataclass
 class Machine:
     name: str = "New machine"
     machine: str = "mac99"
@@ -460,6 +487,7 @@ class Machine:
     usb_storage: list = field(default_factory=list)
     prom_env: PromEnv = field(default_factory=PromEnv)
     share: Share = field(default_factory=Share)
+    midi: Midi = field(default_factory=Midi)
     usb_host_devices: list = field(default_factory=list)   # [UsbHostDevice]
     rtc_base: str = ""
     extra_args: str = ""
@@ -487,6 +515,7 @@ class Machine:
             "usb_storage": [u.to_dict() for u in self.usb_storage],
             "prom_env": self.prom_env.to_dict(),
             "share": self.share.to_dict(),
+            "midi": self.midi.to_dict(),
             "usb_host_devices": [u.to_dict() for u in self.usb_host_devices],
             "rtc_base": self.rtc_base,
             "extra_args": self.extra_args,
@@ -522,6 +551,7 @@ class Machine:
             usb_storage=usb,
             prom_env=PromEnv.from_dict(d.get("prom_env")),
             share=Share.from_dict(d.get("share")),
+            midi=Midi.from_dict(d.get("midi")),
             usb_host_devices=usb_host_devices_from(d.get("usb_host_devices")),
             rtc_base=str(d.get("rtc_base", "") or ""),
             extra_args=str(d.get("extra_args", "")),
@@ -670,6 +700,14 @@ def validate(m: Machine, qemu_dir: str | None, platform: str = paths.HOST_PLATFO
                                 f"{ata_slot_name(winner)} (lower index, also a {kind_word}) "
                                 "will boot first.")
 
+    if m.midi.enabled:
+        if not 1024 <= m.midi.port <= 65535:
+            errors.append("The MIDI port has to be between 1024 and 65535.")
+        if not m.midi.output and not m.midi.input:
+            warnings.append("MIDI is on but has no MIDI device chosen.")
+        if any(r.host_port.strip() == str(m.midi.port) for r in m.network.hostfwd
+               if r.proto == "tcp"):
+            errors.append(f"Port {m.midi.port} is used both for MIDI and for port forwarding.")
     share = m.share
     if share.scope not in SHARE_SCOPES:
         errors.append(f"'{share.scope}' is not a sharing setting.")

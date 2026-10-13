@@ -544,6 +544,7 @@ class NoSystemChooserOnScreen(unittest.TestCase):
 class _FakeRun:
     exit_code = None
     share = None
+    midi = None
 
     def poll(self):
         return None
@@ -564,7 +565,8 @@ class StartDispatch(unittest.TestCase):
         paths.use_install_dir(self.td.name)
         self.saved = (paths.HOST_PLATFORM, ui.start_in_terminal, ui.start_machine)
         self.calls: list[str] = []
-        ui.start_in_terminal = lambda m, d: (self.calls.append("terminal"), (Path(d) / "run.command", None))[1]
+        ui.start_in_terminal = lambda m, d: (self.calls.append("terminal"),
+                                             (Path(d) / "run.command", None, None))[1]
         ui.start_machine = lambda m, d: (self.calls.append("direct"), _FakeRun())[1]
         self.roots = []
 

@@ -168,6 +168,9 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
         argv += ["-device", ",".join(parts)]
     if m.usb_tablet:
         argv += ["-device", "usb-tablet"]
+    if m.midi.enabled:
+        # the modem port (ESCC A), for the bridge in midi.py
+        argv += ["-serial", f"tcp:127.0.0.1:{m.midi.port},server=on,wait=off"]
 
     argv += ["-nic", nic_option(m.network)]
 
