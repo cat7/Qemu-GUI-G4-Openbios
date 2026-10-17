@@ -23,6 +23,11 @@ default (slirp) network the Mac reaches it at `ftp://10.0.2.2/` (`:2121`
 when port 21 is taken); with vmnet choose "All interfaces", set a
 password, and use the host's own address.
 
+"Mac OS volume (virtio-9p)" also attaches the folder as a disk for Mac OS
+8.6 to 9.2 (file types and resource forks kept). It needs `ndrvloader`
+(from github.com/cat7/classicvirtio) next to `qemu-system-ppc`; OpenBIOS
+runs it before booting, through `boot-command=init-program go`.
+
 ## Host USB devices (macOS)
 
 A machine can use USB devices plugged into the Mac (a camera, a DVD

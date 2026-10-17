@@ -18,6 +18,8 @@ docstring for what that character actually selects.
 
 from __future__ import annotations
 
+import os
+
 from . import paths
 from .paths import (qopt, split_extra_args, group_options, bat_quote, drive_format,
                     SUDO_KEEPALIVE)  # re-exported
@@ -32,6 +34,20 @@ HEADER_NOTE = "Written by Qemu-system-ppc G4 Openbios GUI. Do not edit."
 AUDIO_DEFAULT = paths.AUDIO_DEFAULT
 
 PC_BIOS_DIR = "pc-bios"
+NINEP_FSDEV = "hostshare"
+# ndrvloader runs from here, sets the 9P driver on the card, then boots
+NDRVLOADER_ADDR = "0x4000000"
+
+
+def ninep_args(m: Machine, qd: str, platform: str) -> list[str]:
+    """The shared folder as a Mac OS volume (needs Mac OS 8.6 or later)."""
+    folder = os.path.expanduser(m.share.folder.strip())
+    return ["-fsdev", f"local,id={NINEP_FSDEV},path={qopt(folder)},"
+                      "security_model=none,macos_compat=on",
+            "-device", f"virtio-9p-pci,fsdev={NINEP_FSDEV},"
+                       f"mount_tag={qopt(m.share.volume_name.strip())}",
+            "-device", f"loader,addr={NDRVLOADER_ADDR},"
+                       f"file={qopt(_path(model.NDRVLOADER, qd, platform))}"]
 
 
 def _path(p: str, base: str, platform: str) -> str:
@@ -116,6 +132,8 @@ def prom_env_tokens(m: Machine) -> list[str]:
         out += ["-prom-env", f"boot-device={pe.boot_device.strip()}"]
     if pe.boot_args.strip():
         out += ["-prom-env", f"boot-args={pe.boot_args.strip()}"]
+    if m.share.volume_on:
+        out += ["-prom-env", "boot-command=init-program go"]
     return out
 
 
@@ -166,6 +184,8 @@ def build_argv(m: Machine, qemu_dir: str, machine_dir: str,
         if m.gpu.romfile:
             parts.append(f"romfile={qopt(_path(m.gpu.romfile, qd, platform))}")
         argv += ["-device", ",".join(parts)]
+    if m.share.volume_on:
+        argv += ninep_args(m, qd, platform)
     if m.usb_tablet:
         argv += ["-device", "usb-tablet"]
     if m.midi.enabled:

@@ -410,6 +410,10 @@ def usb_host_devices_from(value: Any) -> list[UsbHostDevice]:
 
 SHARE_SCOPES = ("guest-only", "all-interfaces")
 SHARE_DEFAULT_USER = "guest"
+SHARE_DEFAULT_VOLUME = "Host"
+SHARE_VOLUME_MAX = 27            # an HFS volume name
+# Next to the binary: OpenBIOS loads it to hand Mac OS the 9P driver.
+NDRVLOADER = "ndrvloader"
 MIDI_DEFAULT_PORT = 1234
 
 
@@ -421,10 +425,14 @@ class Share:
     user: str = SHARE_DEFAULT_USER
     password: str = ""
     scope: str = "guest-only"    # guest-only | all-interfaces
+    ftp: bool = True             # serve the folder over FTP
+    volume: bool = False         # attach it as a Mac OS volume (virtio-9p)
+    volume_name: str = SHARE_DEFAULT_VOLUME
 
     def to_dict(self) -> dict:
         return {"folder": self.folder, "user": self.user, "password": self.password,
-                "scope": self.scope}
+                "scope": self.scope, "ftp": self.ftp, "volume": self.volume,
+                "volume_name": self.volume_name}
 
     @classmethod
     def from_dict(cls, d: Any) -> "Share":
@@ -433,11 +441,22 @@ class Share:
         return cls(str(d.get("folder", "") or ""),
                    str(d.get("user", SHARE_DEFAULT_USER) or SHARE_DEFAULT_USER),
                    str(d.get("password", "") or ""),
-                   str(d.get("scope", "guest-only") or "guest-only"))
+                   str(d.get("scope", "guest-only") or "guest-only"),
+                   bool(d.get("ftp", True)),
+                   bool(d.get("volume", False)),
+                   str(d.get("volume_name", SHARE_DEFAULT_VOLUME) or SHARE_DEFAULT_VOLUME))
 
     @property
     def enabled(self) -> bool:
         return bool(self.folder.strip())
+
+    @property
+    def ftp_on(self) -> bool:
+        return self.enabled and self.ftp
+
+    @property
+    def volume_on(self) -> bool:
+        return self.enabled and self.volume
 
 
 @dataclass
@@ -714,12 +733,22 @@ def validate(m: Machine, qemu_dir: str | None, platform: str = paths.HOST_PLATFO
     if share.enabled:
         if not Path(share.folder.strip()).expanduser().is_dir():
             errors.append("The shared folder is not a folder that exists.")
+        if not share.ftp and not share.volume:
+            warnings.append("The shared folder has neither FTP nor a volume on.")
+    if share.ftp_on:
         if not share.user.strip():
             errors.append("The shared folder has no user name.")
         if share.scope == "all-interfaces" and not share.password:
             errors.append("Sharing on all interfaces needs a password.")
         if share.scope == "guest-only" and net.mode != "user":
             warnings.append("Guest only sharing is only reachable with default (slirp).")
+    if share.volume_on:
+        name = share.volume_name.strip()
+        if not name or len(name) > SHARE_VOLUME_MAX or ":" in name:
+            errors.append(f"The volume name has to be 1 to {SHARE_VOLUME_MAX} characters, "
+                          "without a colon.")
+        if check_files and qemu_dir and not (Path(qemu_dir) / NDRVLOADER).is_file():
+            errors.append(f"{NDRVLOADER} is missing next to the emulator.")
 
     for u in m.usb_host_devices:
         if not USB_ID_RE.match(u.id):

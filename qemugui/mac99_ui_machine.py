@@ -541,22 +541,49 @@ class MachineEditor(tk.Toplevel):
             row=0, column=1, sticky="ew", pady=4)
         ttk.Button(f, text="Choose…", command=self._choose_share_folder).grid(
             row=0, column=2, sticky="w", padx=4, pady=4)
-        ttk.Label(f, text="User:").grid(row=1, column=0, sticky="w", pady=4)
+
+        self.share_ftp = tk.BooleanVar(value=True)
+        ttk.Checkbutton(f, text="Serve over FTP", variable=self.share_ftp,
+                       command=self._share_changed).grid(row=1, column=0, columnspan=3,
+                                                         sticky="w", pady=(8, 0))
+        ttk.Label(f, text="User:").grid(row=2, column=0, sticky="w", pady=4)
         self.share_user_var = tk.StringVar(value=Share().user)
-        ttk.Entry(f, textvariable=self.share_user_var, width=20).grid(
-            row=1, column=1, sticky="w", pady=4)
-        ttk.Label(f, text="Password:").grid(row=2, column=0, sticky="w", pady=4)
+        self.share_user_entry = ttk.Entry(f, textvariable=self.share_user_var, width=20)
+        self.share_user_entry.grid(row=2, column=1, sticky="w", pady=4)
+        ttk.Label(f, text="Password:").grid(row=3, column=0, sticky="w", pady=4)
         self.share_password_var = tk.StringVar()
-        ttk.Entry(f, textvariable=self.share_password_var, width=20, show="*").grid(
-            row=2, column=1, sticky="w", pady=4)
+        self.share_password_entry = ttk.Entry(f, textvariable=self.share_password_var,
+                                              width=20, show="*")
+        self.share_password_entry.grid(row=3, column=1, sticky="w", pady=4)
         self.share_scope = tk.StringVar(value="guest-only")
-        ttk.Radiobutton(f, text="Guest only", variable=self.share_scope,
-                       value="guest-only").grid(row=3, column=0, columnspan=3, sticky="w",
-                                                pady=(8, 0))
-        ttk.Radiobutton(f, text="All interfaces (needs a password)", variable=self.share_scope,
-                       value="all-interfaces").grid(row=4, column=0, columnspan=3, sticky="w")
+        self.share_scope_rbs = [
+            ttk.Radiobutton(f, text="Guest only", variable=self.share_scope, value="guest-only"),
+            ttk.Radiobutton(f, text="All interfaces (needs a password)",
+                            variable=self.share_scope, value="all-interfaces")]
+        self.share_scope_rbs[0].grid(row=4, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        self.share_scope_rbs[1].grid(row=5, column=0, columnspan=3, sticky="w")
         ttk.Label(f, text="In the Mac: ftp://10.0.2.2/ with the default network setting.",
-                 foreground=GREY).grid(row=5, column=0, columnspan=3, sticky="w", pady=(8, 0))
+                 foreground=GREY).grid(row=6, column=0, columnspan=3, sticky="w", pady=(8, 0))
+
+        self.share_volume = tk.BooleanVar(value=False)
+        ttk.Checkbutton(f, text="Mac OS volume (virtio-9p)", variable=self.share_volume,
+                       command=self._share_changed).grid(row=7, column=0, columnspan=3,
+                                                         sticky="w", pady=(12, 0))
+        ttk.Label(f, text="Volume name:").grid(row=8, column=0, sticky="w", pady=4)
+        self.share_volume_var = tk.StringVar(value=model.SHARE_DEFAULT_VOLUME)
+        self.share_volume_entry = ttk.Entry(f, textvariable=self.share_volume_var, width=20)
+        self.share_volume_entry.grid(row=8, column=1, sticky="w", pady=4)
+        ttk.Label(f, text="Mac OS 8.6 to 9.2: the folder appears on the desktop, read and "
+                          "write, with file types and resource forks.",
+                 foreground=GREY, wraplength=EDITOR_WIDTH - 60, justify="left").grid(
+            row=9, column=0, columnspan=3, sticky="w")
+        self._share_changed()
+
+    def _share_changed(self):
+        ftp = "normal" if self.share_ftp.get() else "disabled"
+        for w in (self.share_user_entry, self.share_password_entry, *self.share_scope_rbs):
+            w.config(state=ftp)
+        self.share_volume_entry.config(state="normal" if self.share_volume.get() else "disabled")
 
     def _build_midi(self):
         f = self._tab("MIDI")
@@ -909,6 +936,10 @@ class MachineEditor(tk.Toplevel):
         self.share_user_var.set(m.share.user)
         self.share_password_var.set(m.share.password)
         self.share_scope.set(m.share.scope)
+        self.share_ftp.set(m.share.ftp)
+        self.share_volume.set(m.share.volume)
+        self.share_volume_var.set(m.share.volume_name)
+        self._share_changed()
         self.midi_on.set(m.midi.enabled)
         self.midi_port_var.set(str(m.midi.port))
         self.midi_out_var.set(m.midi.output or MIDI_NONE)
@@ -955,7 +986,9 @@ class MachineEditor(tk.Toplevel):
         m.usb_tablet = self.usb_tablet_var.get()
         m.cd_audio = self.cd_audio_var.get()
         m.share = Share(self.share_folder_var.get().strip(), self.share_user_var.get().strip(),
-                        self.share_password_var.get(), self.share_scope.get())
+                        self.share_password_var.get(), self.share_scope.get(),
+                        self.share_ftp.get(), self.share_volume.get(),
+                        self.share_volume_var.get().strip())
         try:
             midi_port = int(self.midi_port_var.get().strip())
         except ValueError:

@@ -23,6 +23,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from qemugui import mac99_model as model              # noqa: E402
+from qemugui import mac99_command as command          # noqa: E402
 from qemugui import mac99_share as share               # noqa: E402
 from qemugui.mac99_model import Machine, Share, Network  # noqa: E402
 
@@ -35,6 +36,69 @@ def pasv_endpoint(reply: str) -> tuple[str, int]:
     assert m, reply
     a, b, c, d, p1, p2 = (int(x) for x in m.groups())
     return f"{a}.{b}.{c}.{d}", p1 * 256 + p2
+
+
+class MacOsVolume(unittest.TestCase):
+    """The shared folder as a virtio-9p Mac OS volume, loaded by ndrvloader."""
+
+    QD = "/Applications/qemu-system-ppc-G4-openbios"
+
+    def machine(self, **share):
+        m = Machine.load(FIXTURES / "mac99-osx.json")
+        m.share = Share("/shared/folder", **share)
+        return m
+
+    def test_an_old_share_block_keeps_ftp_and_has_no_volume(self):
+        sh = Machine.from_dict({"name": "x", "share": {"folder": "/f"}}).share
+        self.assertTrue(sh.ftp_on)
+        self.assertFalse(sh.volume_on)
+
+    def test_volume_round_trips(self):
+        m = self.machine(ftp=False, volume=True, volume_name="Shared")
+        self.assertEqual(Machine.from_json(m.to_json()).share, m.share)
+
+    def test_no_volume_no_9p_and_no_boot_command(self):
+        argv = command.build_argv(self.machine(), self.QD, "/m", "darwin")
+        self.assertFalse(any("virtio-9p" in t or "boot-command" in t or "ndrvloader" in t
+                             for t in argv))
+
+    def test_volume_adds_fsdev_card_loader_and_boot_command(self):
+        argv = command.build_argv(self.machine(volume=True, volume_name="My, Disk"),
+                                  self.QD, "/m", "darwin")
+        self.assertEqual(argv[argv.index("-fsdev") + 1],
+                         "local,id=hostshare,path=/shared/folder,"
+                         "security_model=none,macos_compat=on")
+        self.assertIn("virtio-9p-pci,fsdev=hostshare,mount_tag=My,, Disk", argv)
+        self.assertIn("loader,addr=0x4000000,file=" + self.QD + "/ndrvloader", argv)
+        i = argv.index("boot-command=init-program go")
+        self.assertEqual(argv[i - 1], "-prom-env")
+
+    def test_ftp_off_skips_its_checks(self):
+        with tempfile.TemporaryDirectory() as td:
+            m = self.machine(user="", ftp=False, volume=True)
+            m.share.folder = td
+            errors, _ = model.validate(m, None, "darwin", check_files=False)
+        self.assertFalse(m.share.ftp_on)
+        self.assertFalse(any("user name" in e for e in errors), errors)
+
+    def test_volume_name_is_an_hfs_name(self):
+        with tempfile.TemporaryDirectory() as td:
+            for name, ok in (("Host", True), ("x" * 27, True), ("x" * 28, False),
+                             ("a:b", False), ("", False)):
+                m = self.machine(volume=True, volume_name=name)
+                m.share.folder = td
+                errors, _ = model.validate(m, None, "darwin", check_files=False)
+                self.assertEqual(not any("volume name" in e for e in errors), ok, name)
+
+    def test_a_missing_ndrvloader_is_reported_and_a_present_one_is_not(self):
+        with tempfile.TemporaryDirectory() as td:
+            m = self.machine(volume=True)
+            m.share.folder = td
+            errors, _ = model.validate(m, td, "darwin", check_files=True)
+            self.assertTrue(any("ndrvloader" in e for e in errors), errors)
+            (Path(td) / "ndrvloader").write_bytes(b"\x01\xdf")
+            errors, _ = model.validate(m, td, "darwin", check_files=True)
+            self.assertFalse(any("ndrvloader" in e for e in errors), errors)
 
 
 class ShareRecord(unittest.TestCase):
@@ -51,7 +115,8 @@ class ShareRecord(unittest.TestCase):
         m.share = Share("/shared/folder", "mac", "secret", "all-interfaces")
         d = json.loads(m.to_json())
         self.assertEqual(d["share"], {"folder": "/shared/folder", "user": "mac",
-                                      "password": "secret", "scope": "all-interfaces"})
+                                      "password": "secret", "scope": "all-interfaces",
+                                      "ftp": True, "volume": False, "volume_name": "Host"})
         self.assertEqual(Machine.from_json(m.to_json()), m)
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "machine.json"
