@@ -116,6 +116,11 @@ class ShareServer:
     def stop(self, timeout: float = 5.0) -> None:
         self._stop.set()
         self._thread.join(timeout)
+        # Windows keeps an open log file from being moved or deleted
+        logger = logging.getLogger("pyftpdlib")
+        for h in list(logger.handlers):
+            logger.removeHandler(h)
+            h.close()
 
 
 def _bind_host(share: Share) -> str:
