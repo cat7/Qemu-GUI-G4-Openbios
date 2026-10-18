@@ -542,7 +542,7 @@ class MachineEditor(tk.Toplevel):
         ttk.Button(f, text="Choose…", command=self._choose_share_folder).grid(
             row=0, column=2, sticky="w", padx=4, pady=4)
 
-        self.share_ftp = tk.BooleanVar(value=True)
+        self.share_ftp = tk.BooleanVar(value=False)
         ttk.Checkbutton(f, text="Serve over FTP", variable=self.share_ftp,
                        command=self._share_changed).grid(row=1, column=0, columnspan=3,
                                                          sticky="w", pady=(8, 0))
@@ -573,17 +573,25 @@ class MachineEditor(tk.Toplevel):
         self.share_volume_var = tk.StringVar(value=model.SHARE_DEFAULT_VOLUME)
         self.share_volume_entry = ttk.Entry(f, textvariable=self.share_volume_var, width=20)
         self.share_volume_entry.grid(row=8, column=1, sticky="w", pady=4)
-        ttk.Label(f, text="Mac OS 8.6 to 9.2: the folder appears on the desktop, read and "
-                          "write, with file types and resource forks.",
+        self.share_os9 = tk.BooleanVar(value=False)
+        self.share_os9_cb = ttk.Checkbutton(f, text="Load the Mac OS 9 driver at startup "
+                                                    "(not with the Radeon 9800)",
+                                            variable=self.share_os9)
+        self.share_os9_cb.grid(row=9, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        ttk.Label(f, text="The folder appears on the desktop, read and write, with file "
+                          "types and resource forks: in Mac OS 8.6 to 9.2 with the driver "
+                          "above, in Mac OS X 10.4 and 10.5 with osx9p installed from its CD.",
                  foreground=GREY, wraplength=EDITOR_WIDTH - 60, justify="left").grid(
-            row=9, column=0, columnspan=3, sticky="w")
+            row=10, column=0, columnspan=3, sticky="w")
         self._share_changed()
 
     def _share_changed(self):
         ftp = "normal" if self.share_ftp.get() else "disabled"
         for w in (self.share_user_entry, self.share_password_entry, *self.share_scope_rbs):
             w.config(state=ftp)
-        self.share_volume_entry.config(state="normal" if self.share_volume.get() else "disabled")
+        vol = "normal" if self.share_volume.get() else "disabled"
+        self.share_volume_entry.config(state=vol)
+        self.share_os9_cb.config(state=vol)
 
     def _build_midi(self):
         f = self._tab("MIDI")
@@ -939,6 +947,7 @@ class MachineEditor(tk.Toplevel):
         self.share_ftp.set(m.share.ftp)
         self.share_volume.set(m.share.volume)
         self.share_volume_var.set(m.share.volume_name)
+        self.share_os9.set(m.share.os9_driver)
         self._share_changed()
         self.midi_on.set(m.midi.enabled)
         self.midi_port_var.set(str(m.midi.port))
@@ -988,7 +997,7 @@ class MachineEditor(tk.Toplevel):
         m.share = Share(self.share_folder_var.get().strip(), self.share_user_var.get().strip(),
                         self.share_password_var.get(), self.share_scope.get(),
                         self.share_ftp.get(), self.share_volume.get(),
-                        self.share_volume_var.get().strip())
+                        self.share_volume_var.get().strip(), self.share_os9.get())
         try:
             midi_port = int(self.midi_port_var.get().strip())
         except ValueError:

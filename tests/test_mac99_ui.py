@@ -358,6 +358,10 @@ class ShareTab(unittest.TestCase):
         ed = self._editor(Machine(name="t"))
         self.assertEqual(ed.share_folder_var.get(), "")
         self.assertEqual(ed.share_scope.get(), "guest-only")
+        self.assertFalse(ed.share_ftp.get())
+        self.assertFalse(ed.share_volume.get())
+        self.assertFalse(ed.share_os9.get())
+        self.assertEqual(str(ed.share_os9_cb.cget("state")), "disabled")
         self.assertEqual(ed.collect().share, Share())
 
     def test_loads_and_collects_a_share(self):

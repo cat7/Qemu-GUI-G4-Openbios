@@ -18,15 +18,20 @@ same folder as `qemu-system-ppc` (and `qemu-img`, `pc-bios/`).
 
 ## Shared folder
 
-Each machine can share one host folder over FTP while it runs. With the
+Each machine can share one host folder while it runs, over FTP, as a
+Mac OS volume, or both; neither is on until ticked. Over FTP, with the
 default (slirp) network the Mac reaches it at `ftp://10.0.2.2/` (`:2121`
 when port 21 is taken); with vmnet choose "All interfaces", set a
 password, and use the host's own address.
 
-"Mac OS volume (virtio-9p)" also attaches the folder as a disk for Mac OS
-8.6 to 9.2 (file types and resource forks kept). It needs `ndrvloader`
-(from github.com/cat7/classicvirtio) next to `qemu-system-ppc`; OpenBIOS
-runs it before booting, through `boot-command=init-program go`.
+"Mac OS volume (virtio-9p)" attaches the folder as a disk for Mac OS 8.6
+to 9.2 (file types and resource forks kept), and for Mac OS X 10.4 and
+10.5 with osx9p installed (its CD image is built from
+github.com/cat7/osx9p). Mac OS 9 needs "Load the Mac OS 9 driver at
+startup": OpenBIOS then runs `ndrvloader` (from
+github.com/cat7/classicvirtio, next to `qemu-system-ppc`) before booting,
+through `boot-command=init-program go`. The driver does not fit in
+OpenBIOS together with the Radeon 9800's ROM; use the Rage 128 Pro.
 
 ## Host USB devices (macOS)
 

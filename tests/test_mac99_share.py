@@ -53,6 +53,21 @@ class MacOsVolume(unittest.TestCase):
         self.assertTrue(sh.ftp_on)
         self.assertFalse(sh.volume_on)
 
+    def test_an_old_volume_keeps_the_os9_driver(self):
+        sh = Machine.from_dict({"name": "x", "share": {"folder": "/f", "volume": True}}).share
+        self.assertTrue(sh.os9_driver_on)
+        sh = Machine.from_dict({"name": "x", "share": {"folder": "/f", "volume": True,
+                                                       "os9_driver": False}}).share
+        self.assertFalse(sh.os9_driver_on)
+
+    def test_nothing_is_ticked_by_default(self):
+        self.assertFalse(Share().ftp)
+        self.assertFalse(Share().volume)
+        sh = Machine.from_dict({"name": "x", "share": {"folder": ""}}).share
+        self.assertFalse(sh.ftp)
+        self.assertFalse(sh.volume)
+        self.assertFalse(Share().os9_driver)
+
     def test_volume_round_trips(self):
         m = self.machine(ftp=False, volume=True, volume_name="Shared")
         self.assertEqual(Machine.from_json(m.to_json()).share, m.share)
@@ -62,8 +77,25 @@ class MacOsVolume(unittest.TestCase):
         self.assertFalse(any("virtio-9p" in t or "boot-command" in t or "ndrvloader" in t
                              for t in argv))
 
+    def test_volume_without_the_os9_driver_is_fsdev_and_card_only(self):
+        argv = command.build_argv(self.machine(volume=True), self.QD, "/m", "darwin")
+        self.assertIn("virtio-9p-pci,fsdev=hostshare,mount_tag=Host", argv)
+        self.assertFalse(any("boot-command" in t or "ndrvloader" in t for t in argv))
+
+    def test_the_os9_driver_with_the_radeon_9800_is_an_error(self):
+        with tempfile.TemporaryDirectory() as td:
+            m = self.machine(volume=True, os9_driver=True)
+            m.share.folder = td
+            m.gpu = model.Gpu(model="radeon9800")
+            errors, _ = model.validate(m, None, "darwin", check_files=False)
+            self.assertTrue(any("Radeon 9800" in e for e in errors), errors)
+            m.share.os9_driver = False
+            errors, _ = model.validate(m, None, "darwin", check_files=False)
+            self.assertFalse(any("Radeon 9800" in e for e in errors), errors)
+
     def test_volume_adds_fsdev_card_loader_and_boot_command(self):
-        argv = command.build_argv(self.machine(volume=True, volume_name="My, Disk"),
+        argv = command.build_argv(self.machine(volume=True, volume_name="My, Disk",
+                                               os9_driver=True),
                                   self.QD, "/m", "darwin")
         self.assertEqual(argv[argv.index("-fsdev") + 1],
                          "local,id=hostshare,path=/shared/folder,"
@@ -84,7 +116,7 @@ class MacOsVolume(unittest.TestCase):
     def test_volume_name_is_an_hfs_name(self):
         with tempfile.TemporaryDirectory() as td:
             for name, ok in (("Host", True), ("x" * 27, True), ("x" * 28, False),
-                             ("a:b", False), ("", False)):
+                             ("a:b", False), ("a/b", False), ("", False)):
                 m = self.machine(volume=True, volume_name=name)
                 m.share.folder = td
                 errors, _ = model.validate(m, None, "darwin", check_files=False)
@@ -92,7 +124,7 @@ class MacOsVolume(unittest.TestCase):
 
     def test_a_missing_ndrvloader_is_reported_and_a_present_one_is_not(self):
         with tempfile.TemporaryDirectory() as td:
-            m = self.machine(volume=True)
+            m = self.machine(volume=True, os9_driver=True)
             m.share.folder = td
             errors, _ = model.validate(m, td, "darwin", check_files=True)
             self.assertTrue(any("ndrvloader" in e for e in errors), errors)
@@ -116,7 +148,8 @@ class ShareRecord(unittest.TestCase):
         d = json.loads(m.to_json())
         self.assertEqual(d["share"], {"folder": "/shared/folder", "user": "mac",
                                       "password": "secret", "scope": "all-interfaces",
-                                      "ftp": True, "volume": False, "volume_name": "Host"})
+                                      "ftp": False, "volume": False, "volume_name": "Host",
+                                      "os9_driver": False})
         self.assertEqual(Machine.from_json(m.to_json()), m)
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "machine.json"
@@ -125,7 +158,7 @@ class ShareRecord(unittest.TestCase):
 
     def test_a_bare_share_block_fills_in_the_defaults(self):
         m = Machine.from_dict({"name": "x", "share": {"folder": "/f"}})
-        self.assertEqual(m.share, Share("/f", "guest", "", "guest-only"))
+        self.assertEqual(m.share, Share("/f", "guest", "", "guest-only", ftp=True))
         self.assertTrue(m.share.enabled)
         self.assertEqual(Machine.from_dict({"name": "x", "share": "junk"}).share, Share())
 
@@ -134,6 +167,7 @@ class ShareChecks(unittest.TestCase):
 
     def machine(self, **kw) -> Machine:
         m = Machine.load(FIXTURES / "mac99-osx.json")
+        kw.setdefault("ftp", True)
         m.share = Share(**kw)
         return m
 

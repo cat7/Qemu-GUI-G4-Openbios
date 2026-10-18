@@ -40,14 +40,17 @@ NDRVLOADER_ADDR = "0x4000000"
 
 
 def ninep_args(m: Machine, qd: str, platform: str) -> list[str]:
-    """The shared folder as a Mac OS volume (needs Mac OS 8.6 or later)."""
+    """The shared folder as a Mac OS volume: Mac OS 8.6-9.2 with the driver
+    OpenBIOS loads, Mac OS X with osx9p."""
     folder = os.path.expanduser(m.share.folder.strip())
-    return ["-fsdev", f"local,id={NINEP_FSDEV},path={qopt(folder)},"
-                      "security_model=none,macos_compat=on",
-            "-device", f"virtio-9p-pci,fsdev={NINEP_FSDEV},"
-                       f"mount_tag={qopt(m.share.volume_name.strip())}",
-            "-device", f"loader,addr={NDRVLOADER_ADDR},"
-                       f"file={qopt(_path(model.NDRVLOADER, qd, platform))}"]
+    out = ["-fsdev", f"local,id={NINEP_FSDEV},path={qopt(folder)},"
+                     "security_model=none,macos_compat=on",
+           "-device", f"virtio-9p-pci,fsdev={NINEP_FSDEV},"
+                      f"mount_tag={qopt(m.share.volume_name.strip())}"]
+    if m.share.os9_driver_on:
+        out += ["-device", f"loader,addr={NDRVLOADER_ADDR},"
+                           f"file={qopt(_path(model.NDRVLOADER, qd, platform))}"]
+    return out
 
 
 def _path(p: str, base: str, platform: str) -> str:
@@ -132,7 +135,7 @@ def prom_env_tokens(m: Machine) -> list[str]:
         out += ["-prom-env", f"boot-device={pe.boot_device.strip()}"]
     if pe.boot_args.strip():
         out += ["-prom-env", f"boot-args={pe.boot_args.strip()}"]
-    if m.share.volume_on:
+    if m.share.os9_driver_on:
         out += ["-prom-env", "boot-command=init-program go"]
     return out
 

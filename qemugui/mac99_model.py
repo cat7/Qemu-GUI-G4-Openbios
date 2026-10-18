@@ -425,26 +425,31 @@ class Share:
     user: str = SHARE_DEFAULT_USER
     password: str = ""
     scope: str = "guest-only"    # guest-only | all-interfaces
-    ftp: bool = True             # serve the folder over FTP
+    ftp: bool = False            # serve the folder over FTP
     volume: bool = False         # attach it as a Mac OS volume (virtio-9p)
     volume_name: str = SHARE_DEFAULT_VOLUME
+    os9_driver: bool = False     # OpenBIOS loads the Mac OS 9 driver (ndrvloader)
 
     def to_dict(self) -> dict:
         return {"folder": self.folder, "user": self.user, "password": self.password,
                 "scope": self.scope, "ftp": self.ftp, "volume": self.volume,
-                "volume_name": self.volume_name}
+                "volume_name": self.volume_name, "os9_driver": self.os9_driver}
 
     @classmethod
     def from_dict(cls, d: Any) -> "Share":
         if not isinstance(d, dict):
             return cls()
-        return cls(str(d.get("folder", "") or ""),
+        folder = str(d.get("folder", "") or "")
+        # records from before the FTP option shared their folder over FTP
+        return cls(folder,
                    str(d.get("user", SHARE_DEFAULT_USER) or SHARE_DEFAULT_USER),
                    str(d.get("password", "") or ""),
                    str(d.get("scope", "guest-only") or "guest-only"),
-                   bool(d.get("ftp", True)),
+                   bool(d.get("ftp", bool(folder.strip()))),
                    bool(d.get("volume", False)),
-                   str(d.get("volume_name", SHARE_DEFAULT_VOLUME) or SHARE_DEFAULT_VOLUME))
+                   str(d.get("volume_name", SHARE_DEFAULT_VOLUME) or SHARE_DEFAULT_VOLUME),
+                   # the volume was for Mac OS 9 only before this switch
+                   bool(d.get("os9_driver", d.get("volume", False))))
 
     @property
     def enabled(self) -> bool:
@@ -457,6 +462,10 @@ class Share:
     @property
     def volume_on(self) -> bool:
         return self.enabled and self.volume
+
+    @property
+    def os9_driver_on(self) -> bool:
+        return self.volume_on and self.os9_driver
 
 
 @dataclass
@@ -744,9 +753,13 @@ def validate(m: Machine, qemu_dir: str | None, platform: str = paths.HOST_PLATFO
             warnings.append("Guest only sharing is only reachable with default (slirp).")
     if share.volume_on:
         name = share.volume_name.strip()
-        if not name or len(name) > SHARE_VOLUME_MAX or ":" in name:
+        if not name or len(name) > SHARE_VOLUME_MAX or ":" in name or "/" in name:
             errors.append(f"The volume name has to be 1 to {SHARE_VOLUME_MAX} characters, "
-                          "without a colon.")
+                          "without a colon or a slash.")
+    if share.os9_driver_on:
+        if m.gpu and m.gpu.model == "radeon9800":
+            errors.append("The Mac OS 9 driver for the shared volume does not fit in "
+                          "OpenBIOS with the Radeon 9800; use the Rage 128 Pro.")
         if check_files and qemu_dir and not (Path(qemu_dir) / NDRVLOADER).is_file():
             errors.append(f"{NDRVLOADER} is missing next to the emulator.")
 
