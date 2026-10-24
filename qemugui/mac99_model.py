@@ -151,6 +151,7 @@ VIA_MODES = ("cuda", "pmu", "pmu-adb")
 RAM_CHOICES = (512, 768, 1024, 1536, 2048)
 RAM_MIN, RAM_MAX = 64, 4096
 SMP_MIN, SMP_MAX = 1, 16  # Mac OS X 10.5 deadlocks above ~16 CPUs
+DECR_CAP_MS = 100  # timer kick interval when the setting is on
 
 # The NVRAM this GUI gives each machine. mac99 has no PRAM file the way
 # g3beige does -- see the module docstring.
@@ -501,6 +502,7 @@ class Machine:
     via: str = "pmu"              # cuda | pmu | pmu-adb
     ram_mb: int = 512
     smp: int = 1
+    decr_cap_ms: int = 0           # 0 = off; else -M mac99,decr-cap-ms=N
     bios: str = FIRMWARE_FILE
     display: str = "cocoa"
     vnc: str = ""                  # "" = off; else a -vnc display spec, e.g. ":1"
@@ -529,6 +531,7 @@ class Machine:
             "via": self.via,
             "ram_mb": self.ram_mb,
             "smp": self.smp,
+            "decr_cap_ms": self.decr_cap_ms,
             "bios": self.bios,
             "display": self.display,
             "vnc": self.vnc,
@@ -565,6 +568,7 @@ class Machine:
             via=str(d.get("via") or "pmu"),
             ram_mb=int(d.get("ram_mb", 512)),
             smp=int(d.get("smp", 1) or 1),
+            decr_cap_ms=int(d.get("decr_cap_ms", 0) or 0),
             bios=str(d.get("bios") or FIRMWARE_FILE),
             display=str(d.get("display") or default_display()),
             vnc=str(d.get("vnc", "") or ""),
@@ -670,6 +674,8 @@ def validate(m: Machine, qemu_dir: str | None, platform: str = paths.HOST_PLATFO
         errors.append(f"'{m.via}' is not a via setting.")
     if not (SMP_MIN <= m.smp <= SMP_MAX):
         errors.append(f"CPUs has to be between {SMP_MIN} and {SMP_MAX}.")
+    if m.decr_cap_ms < 0:
+        errors.append("The timer kick interval can't be negative.")
     elif m.smp > 1 and m.via not in ("pmu", "pmu-adb"):
         errors.append("More than one CPU needs via pmu or pmu-adb.")
     if m.display == "cocoa" and platform != "darwin":

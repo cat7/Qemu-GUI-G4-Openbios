@@ -61,6 +61,8 @@ def machine_option(m: Machine) -> str:
     opt = f"{m.machine},via={m.via}"
     if m.usb_host_devices:
         opt += ",nec-usb=on"
+    if m.decr_cap_ms > 0:
+        opt += f",decr-cap-ms={int(m.decr_cap_ms)}"
     return opt
 
 

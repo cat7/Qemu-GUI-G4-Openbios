@@ -1121,3 +1121,22 @@ class PortForwarding(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DecrCapTests(unittest.TestCase):
+    def test_off_by_default(self):
+        m = Machine(name="t")
+        self.assertNotIn("decr-cap-ms", command.machine_option(m))
+
+    def test_on_adds_machine_property(self):
+        m = Machine(name="t", smp=16, decr_cap_ms=100)
+        self.assertTrue(command.machine_option(m).endswith(",decr-cap-ms=100"))
+
+    def test_round_trip(self):
+        m = Machine.from_dict(Machine(name="t", decr_cap_ms=100).to_dict())
+        self.assertEqual(m.decr_cap_ms, 100)
+        self.assertEqual(Machine.from_dict({"name": "t"}).decr_cap_ms, 0)
+
+    def test_negative_is_an_error(self):
+        errors, _ = model.validate(Machine(name="t", decr_cap_ms=-1), None, "darwin")
+        self.assertTrue(errors)

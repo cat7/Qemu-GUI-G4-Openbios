@@ -257,6 +257,14 @@ class MachineEditor(tk.Toplevel):
         ttk.Label(f, text="Use max 2 CPUS for Mac OS 9 up to OSX 10.3, use 4 CPUS for OSX 10.4 and 10.5 only",
                  foreground=GREY).grid(row=r, column=0, columnspan=2, sticky="w")
         r += 1
+        self.decr_cap_var = tk.BooleanVar()
+        ttk.Checkbutton(f, text=f"Kick idle CPUs every {model.DECR_CAP_MS} ms",
+                        variable=self.decr_cap_var).grid(row=r, column=1, sticky="w")
+        r += 1
+        ttk.Label(f, text="For Mac OS X on more than 4 CPUs: avoids Tiger's boot stall "
+                          "and a Leopard panic.",
+                  foreground=GREY).grid(row=r, column=0, columnspan=2, sticky="w")
+        r += 1
         ttk.Label(f, text="Via:").grid(row=r, column=0, sticky="w", pady=4)
         self.via_var = tk.StringVar()
         ttk.Combobox(f, textvariable=self.via_var, values=list(model.VIA_MODES), state="readonly",
@@ -902,6 +910,7 @@ class MachineEditor(tk.Toplevel):
         self.name_var.set(m.name)
         self.ram_var.set(str(m.ram_mb))
         self.smp_var.set(str(m.smp))
+        self.decr_cap_var.set(m.decr_cap_ms > 0)
         self.bios_var.set(m.bios or model.FIRMWARE_FILE)
         self.via_var.set(m.via)
         self.display_var.set(m.display)
@@ -976,6 +985,10 @@ class MachineEditor(tk.Toplevel):
             m.smp = int(self.smp_var.get().strip())
         except ValueError:
             m.smp = -1
+        if not self.decr_cap_var.get():
+            m.decr_cap_ms = 0
+        elif m.decr_cap_ms <= 0:
+            m.decr_cap_ms = model.DECR_CAP_MS
         m.bios = self.bios_var.get().strip() or model.FIRMWARE_FILE
         m.via = self.via_var.get()
         m.display = self.display_var.get()
