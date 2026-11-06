@@ -149,7 +149,7 @@ def lowest_slot_of_kind(m: Machine, kind: str) -> int | None:
 AUDIO_MODES = ("default", "sdl", "none")
 VIA_MODES = ("cuda", "pmu", "pmu-adb")
 RAM_CHOICES = (512, 768, 1024, 1536, 2048)
-RAM_MIN, RAM_MAX = 64, 4096
+RAM_MIN, RAM_MAX = 64, 2048  # QEMU refuses more than 2 GiB on the G4
 SMP_MIN, SMP_MAX = 1, 16  # Mac OS X 10.5 deadlocks above ~16 CPUs
 DECR_CAP_MS = 100  # timer kick interval when the setting is on
 
